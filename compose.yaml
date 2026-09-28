@@ -1,0 +1,321 @@
+name: telcopulse
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: telcopulse
+      POSTGRES_DB: telcopulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/init-env.sh first}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telcopulse -d telcopulse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  redis:
+    image: redis:8.2-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:16379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    networks: [internal, frontend]
+  kafka:
+    image: apache/kafka:4.1.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,HOST://:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,HOST://127.0.0.1:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_SEGMENT_BYTES: 16777216
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    ports: ["127.0.0.1:19092:19092"]
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    networks: [internal, frontend]
+  migrate:
+    build:
+      context: ./services
+      args: {SERVICE: api-gateway}
+    environment:
+      APP_MODE: local
+      MIGRATE_ONLY: "true"
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [internal]
+  auth-service:
+    build:
+      context: ./services
+      args: {SERVICE: auth-service}
+    environment:
+      APP_MODE: local
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  simulation-service:
+    build:
+      context: ./services
+      args: {SERVICE: simulation-service}
+    environment:
+      APP_MODE: local
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      SIMULATION_OPERATOR_TOKEN: ${SIMULATION_OPERATOR_TOKEN:?Run scripts/init-env.sh first}
+      DEPLOYMENT_URL: http://deployment-service:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      deployment-service: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  incident-service:
+    build:
+      context: ./services
+      args: {SERVICE: incident-service}
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      PROMETHEUS_SOURCE: local-prometheus
+      PROMETHEUS_ENVIRONMENT: development
+      PROMETHEUS_VIEWER_URL: http://localhost:9090
+      JAEGER_QUERY_URL: ${JAEGER_QUERY_URL-http://jaeger:16686}
+      APP_MODE: local
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      INCIDENT_OPERATOR_TOKEN: ${INCIDENT_OPERATOR_TOKEN:?Run scripts/init-env.sh first}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  deployment-service:
+    build:
+      context: ./services
+      args: {SERVICE: deployment-service}
+    environment:
+      APP_MODE: local
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  subscriber-service:
+    build:
+      context: ./services
+      args: {SERVICE: subscriber-service}
+    environment:
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  package-service:
+    build:
+      context: ./services
+      args: {SERVICE: package-service}
+    environment:
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  payment-service:
+    build:
+      context: ./services
+      args: {SERVICE: payment-service}
+    environment:
+      APP_MODE: local
+      SIMULATION_URL: http://simulation-service:8080
+      KAFKA_BROKERS: kafka:9092
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+    depends_on:
+      simulation-service: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  notification-service:
+    build:
+      context: ./services
+      args: {SERVICE: notification-service}
+    environment:
+      SIMULATION_URL: http://simulation-service:8080
+      APP_MODE: local
+      KAFKA_BROKERS: kafka:9092
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      NOTIFICATION_OPERATOR_TOKEN: ${NOTIFICATION_OPERATOR_TOKEN:?Run scripts/init-env.sh first}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+    depends_on:
+      simulation-service: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  api-gateway:
+    build:
+      context: ./services
+      args: {SERVICE: api-gateway}
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PURCHASES_PER_MINUTE: ${PURCHASES_PER_MINUTE:-60}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Run scripts/init-env.sh first}
+      INCIDENT_OPERATOR_TOKEN: ${INCIDENT_OPERATOR_TOKEN:?Run scripts/init-env.sh first}
+      SIMULATION_OPERATOR_TOKEN: ${SIMULATION_OPERATOR_TOKEN:?Run scripts/init-env.sh first}
+      NOTIFICATION_OPERATOR_TOKEN: ${NOTIFICATION_OPERATOR_TOKEN:?Run scripts/init-env.sh first}
+      SUBSCRIBER_URL: http://subscriber-service:8080
+      PACKAGE_URL: http://package-service:8080
+      PAYMENT_URL: http://payment-service:8080
+      NOTIFICATION_URL: http://notification-service:8080
+      SIMULATION_URL: http://simulation-service:8080
+      INCIDENT_URL: http://incident-service:8080
+      DEPLOYMENT_URL: http://deployment-service:8080
+      PROMETHEUS_URL: http://prometheus:9090
+      KAFKA_BROKERS: kafka:9092
+      APP_MODE: local
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://jaeger:4318}
+      LISTEN_ADDR: 0.0.0.0:8080
+      WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
+      AUTH_URL: http://auth-service:8080
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-false}
+      DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
+    depends_on:
+      redis: {condition: service_healthy}
+      auth-service: {condition: service_healthy}
+      subscriber-service:
+        condition: service_healthy
+      package-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      deployment-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+  jaeger:
+    build: ./infrastructure/jaeger
+    ports: ["127.0.0.1:16686:16686"]
+    mem_limit: 384m
+    networks: [internal, frontend]
+  prometheus:
+    build: ./infrastructure/prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=2d", "--storage.tsdb.retention.size=256MB"]
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - prometheus_data:/prometheus
+    networks: [internal, frontend]
+  grafana:
+    build: ./infrastructure/grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run scripts/init-env.sh first}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports: ["127.0.0.1:3002:3000"]
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks: [internal, frontend]
+  web:
+    environment:
+      TRACE_VIEWER_URL: ${TRACE_VIEWER_URL-http://localhost:16686}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports: ["127.0.0.1:${WEB_PORT:-3000}:3000"]
+    depends_on:
+      api-gateway: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [internal, frontend]
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+  kafka_data:
+networks:
+  internal:
+    internal: true
+  frontend: {}
