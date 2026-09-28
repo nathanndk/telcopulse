@@ -1,0 +1,69 @@
+groups:
+  - name: telcopulse
+    rules:
+      - record: telcopulse:business_success_ratio:rate5m
+        expr: sum by (environment) (rate(transaction_total{status="SUCCESS"}[5m])) / sum by (environment) (rate(transaction_total[5m]))
+      - record: telcopulse:business_failure_ratio:increase5m
+        expr: sum by (environment) (increase(transaction_total{status="FAILED"}[5m])) / sum by (environment) (increase(transaction_total[5m]))
+      - record: telcopulse:business_failure_ratio:increase1h
+        expr: sum by (environment) (increase(transaction_total{status="FAILED"}[1h])) / sum by (environment) (increase(transaction_total[1h]))
+      - record: telcopulse:business_failure_ratio:increase30m
+        expr: sum by (environment) (increase(transaction_total{status="FAILED"}[30m])) / sum by (environment) (increase(transaction_total[30m]))
+      - record: telcopulse:business_failure_ratio:increase6h
+        expr: sum by (environment) (increase(transaction_total{status="FAILED"}[6h])) / sum by (environment) (increase(transaction_total[6h]))
+      - record: telcopulse:http_p95_seconds:rate5m
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m])))
+      - alert: BusinessSuccessRateLow
+        expr: |
+          (
+            telcopulse:business_failure_ratio:increase5m > 0.0144
+            and on(environment) telcopulse:business_failure_ratio:increase1h > 0.0144
+            and on(environment) sum by (environment) (increase(transaction_total[5m])) >= 5
+          ) or (
+            telcopulse:business_failure_ratio:increase30m > 0.006
+            and on(environment) telcopulse:business_failure_ratio:increase6h > 0.006
+            and on(environment) sum by (environment) (increase(transaction_total[30m])) >= 30
+          )
+        for: 30s
+        labels: {severity: SEV-2}
+        annotations:
+          summary: "Synthetic purchase SLO budget burning in {{ $labels.environment }}"
+          description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
+      - alert: ServiceLatencyHigh
+        expr: telcopulse:http_p95_seconds:rate5m > 1 and on(service) sum by (service) (increase(http_request_duration_seconds_count[5m])) >= 20
+        for: 30s
+        labels: {severity: SEV-2}
+        annotations:
+          summary: "{{ $labels.service }} HTTP P95 exceeds one second"
+          description: "Shared-runtime HTTP telemetry: at least twenty requests in five minutes. Investigate the affected dependency; customer impact and environment require confirmation."
+      - alert: ServiceUnavailable
+        expr: up{job="telcopulse"} == 0
+        for: 30s
+        labels: {severity: SEV-1}
+        annotations:
+          summary: "{{ $labels.service }} metrics target unavailable"
+      - alert: NotificationConsumerLag
+        expr: sum(kafka_consumer_lag) > 10
+        for: 30s
+        labels: {severity: SEV-2}
+        annotations:
+          summary: "Notification group is more than ten records behind"
+      - alert: EventPublicationDelayed
+        expr: event_outbox_oldest_age_seconds > 30
+        for: 30s
+        labels: {severity: SEV-2}
+        annotations:
+          summary: "{{ $labels.service }} has unpublished events older than 30 seconds"
+      - alert: KafkaLagMeasurementUnavailable
+        expr: kafka_lag_collection_success == 0
+        for: 30s
+        labels: {severity: SEV-3}
+        annotations:
+          summary: "Notification lag could not be measured"
+      - alert: LogExportLoss
+        expr: sum by (service) (increase(log_export_events_total{outcome=~"failed|dropped"}[5m])) > 0
+        for: 30s
+        labels: {severity: SEV-3}
+        annotations:
+          summary: "{{ $labels.service }} log export lost events"
+          description: "Failed or dropped exports observed in five minutes. Check receiver availability, token/index permissions and queue pressure; stdout remains the primary log stream."

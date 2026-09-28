@@ -1,0 +1,227 @@
+rule_files:
+  - rules.yml
+evaluation_interval: 5s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'transaction_total{environment="development",status="SUCCESS"}'
+        values: '0+0x24'
+      - series: 'transaction_total{environment="development",status="FAILED"}'
+        values: '0+1x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BusinessSuccessRateLow
+        exp_alerts:
+          - exp_labels: {environment: development, severity: SEV-2}
+            exp_annotations:
+              summary: Synthetic purchase SLO budget burning in development
+              description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
+  - interval: 15s
+    input_series:
+      - series: 'transaction_total{environment="development",status="SUCCESS"}'
+        values: '0+10x24'
+      - series: 'transaction_total{environment="development",status="FAILED"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BusinessSuccessRateLow
+        exp_alerts: []
+  - interval: 15s
+    input_series:
+      - series: 'transaction_total{environment="development",status="SUCCESS"}'
+        values: '0+0x24'
+      - series: 'transaction_total{environment="development",status="FAILED"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BusinessSuccessRateLow
+        exp_alerts: []
+
+  - name: sustained-budget-burn
+    interval: 15s
+    input_series:
+      - series: 'transaction_total{environment="staging",status="SUCCESS"}'
+        values: '0+99x1500'
+      - series: 'transaction_total{environment="staging",status="FAILED"}'
+        values: '0+1x1500'
+    alert_rule_test:
+      - eval_time: 6h10m
+        alertname: BusinessSuccessRateLow
+        exp_alerts:
+          - exp_labels: {environment: staging, severity: SEV-2}
+            exp_annotations:
+              summary: Synthetic purchase SLO budget burning in staging
+              description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
+
+  - name: below-slow-burn-threshold
+    interval: 15s
+    input_series:
+      - series: 'transaction_total{environment="development",status="SUCCESS"}'
+        values: '0+199x1500'
+      - series: 'transaction_total{environment="development",status="FAILED"}'
+        values: '0+1x1500'
+    alert_rule_test:
+      - eval_time: 6h10m
+        alertname: BusinessSuccessRateLow
+        exp_alerts: []
+
+  - name: sparse-failure-is-not-an-incident
+    interval: 15s
+    input_series:
+      - series: 'transaction_total{environment="development",status="SUCCESS"}'
+        values: '0+0x24'
+      - series: 'transaction_total{environment="development",status="FAILED"}'
+        values: '0 1+0x23'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BusinessSuccessRateLow
+        exp_alerts: []
+
+  - name: burn-recovers-with-new-successes
+    interval: 15s
+    input_series:
+      - series: 'transaction_total{environment="development",status="SUCCESS"}'
+        values: '0+98x8 784+98x8 1568+100x200'
+      - series: 'transaction_total{environment="development",status="FAILED"}'
+        values: '0+2x8 16+2x8 32+0x200'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BusinessSuccessRateLow
+        exp_alerts:
+          - exp_labels: {environment: development, severity: SEV-2}
+            exp_annotations:
+              summary: Synthetic purchase SLO budget burning in development
+              description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
+      - eval_time: 40m
+        alertname: BusinessSuccessRateLow
+        exp_alerts: []
+
+  - name: latency-slow
+    interval: 15s
+    input_series:
+      - series: 'telcopulse:http_p95_seconds:rate5m{service="payment-service"}'
+        values: '4+0x24'
+      - series: 'http_request_duration_seconds_count{service="payment-service"}'
+        values: '0+10x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ServiceLatencyHigh
+        exp_alerts:
+          - exp_labels: {service: payment-service, severity: SEV-2}
+            exp_annotations:
+              summary: payment-service HTTP P95 exceeds one second
+              description: "Shared-runtime HTTP telemetry: at least twenty requests in five minutes. Investigate the affected dependency; customer impact and environment require confirmation."
+
+  - name: latency-fast
+    interval: 15s
+    input_series:
+      - series: 'telcopulse:http_p95_seconds:rate5m{service="payment-service"}'
+        values: '0.2+0x24'
+      - series: 'http_request_duration_seconds_count{service="payment-service"}'
+        values: '0+10x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ServiceLatencyHigh
+        exp_alerts: []
+
+  - name: latency-sparse
+    interval: 15s
+    input_series:
+      - series: 'telcopulse:http_p95_seconds:rate5m{service="payment-service"}'
+        values: '4+0x24'
+      - series: 'http_request_duration_seconds_count{service="payment-service"}'
+        values: '0+0.1x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ServiceLatencyHigh
+        exp_alerts: []
+
+  - name: latency-idle
+    interval: 15s
+    input_series:
+      - series: 'telcopulse:http_p95_seconds:rate5m{service="payment-service"}'
+        values: '4+0x24'
+      - series: 'http_request_duration_seconds_count{service="payment-service"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ServiceLatencyHigh
+        exp_alerts: []
+
+  - name: latency-pending-and-recovery
+    interval: 5s
+    input_series:
+      - series: 'telcopulse:http_p95_seconds:rate5m{service="payment-service"}'
+        values: '0.2+0x5 4+0x11 0.2+0x12'
+      - series: 'http_request_duration_seconds_count{service="payment-service"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 50s
+        alertname: ServiceLatencyHigh
+        exp_alerts: []
+      - eval_time: 65s
+        alertname: ServiceLatencyHigh
+        exp_alerts:
+          - exp_labels: {service: payment-service, severity: SEV-2}
+            exp_annotations:
+              summary: payment-service HTTP P95 exceeds one second
+              description: "Shared-runtime HTTP telemetry: at least twenty requests in five minutes. Investigate the affected dependency; customer impact and environment require confirmation."
+      - eval_time: 100s
+        alertname: ServiceLatencyHigh
+        exp_alerts: []
+
+  - name: log-export-failed
+    interval: 15s
+    input_series:
+      - series: 'log_export_events_total{service="payment-service",outcome="failed"}'
+        values: '0+1x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LogExportLoss
+        exp_alerts:
+          - exp_labels: {service: payment-service, severity: SEV-3}
+            exp_annotations:
+              summary: payment-service log export lost events
+              description: "Failed or dropped exports observed in five minutes. Check receiver availability, token/index permissions and queue pressure; stdout remains the primary log stream."
+
+  - name: log-export-dropped
+    interval: 15s
+    input_series:
+      - series: 'log_export_events_total{service="payment-service",outcome="dropped"}'
+        values: '0+1x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LogExportLoss
+        exp_alerts:
+          - exp_labels: {service: payment-service, severity: SEV-3}
+            exp_annotations:
+              summary: payment-service log export lost events
+              description: "Failed or dropped exports observed in five minutes. Check receiver availability, token/index permissions and queue pressure; stdout remains the primary log stream."
+
+  - name: log-export-healthy
+    interval: 15s
+    input_series:
+      - series: 'log_export_events_total{service="payment-service",outcome="accepted"}'
+        values: '0+1x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LogExportLoss
+        exp_alerts: []
+
+  - name: log-export-idle
+    interval: 15s
+    input_series:
+      - series: 'log_export_events_total{service="payment-service",outcome="failed"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LogExportLoss
+        exp_alerts: []
+
+  - name: log-export-disabled
+    interval: 15s
+    input_series: []
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LogExportLoss
+        exp_alerts: []

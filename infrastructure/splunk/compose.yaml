@@ -1,0 +1,24 @@
+# Opt-in only. Requires rebuilt Go service images and a real HTTPS HEC endpoint.
+x-hec-environment: &hec-environment
+  SPLUNK_HEC_URL: ${SPLUNK_HEC_URL:?Set a full HTTPS HEC event endpoint}
+  SPLUNK_HEC_TOKEN_FILE: /run/secrets/splunk_hec_token
+  SPLUNK_HEC_INDEX: ${SPLUNK_HEC_INDEX:-telcopulse}
+x-hec-service: &hec-service
+  environment: *hec-environment
+  secrets: [splunk_hec_token]
+  networks: [internal, log-export]
+services:
+  auth-service: *hec-service
+  api-gateway: *hec-service
+  subscriber-service: *hec-service
+  package-service: *hec-service
+  payment-service: *hec-service
+  notification-service: *hec-service
+  incident-service: *hec-service
+  simulation-service: *hec-service
+  deployment-service: *hec-service
+secrets:
+  splunk_hec_token:
+    file: ${SPLUNK_HEC_TOKEN_PATH:?Set a private local token file path}
+networks:
+  log-export: {}

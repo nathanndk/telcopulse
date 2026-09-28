@@ -1,0 +1,15 @@
+# Opt-in read-only Splunk Search API for incident log evidence.
+# Use with compose.yaml and a private token file outside the repository.
+services:
+  incident-service:
+    environment:
+      SPLUNK_SEARCH_URL: ${SPLUNK_SEARCH_URL:?Set a full HTTPS Splunk Search jobs endpoint}
+      SPLUNK_SEARCH_TOKEN_FILE: /run/secrets/splunk_search_token
+      SPLUNK_SEARCH_INDEX: ${SPLUNK_SEARCH_INDEX:-telcopulse}
+    secrets: [splunk_search_token]
+    networks: [internal, log-search]
+secrets:
+  splunk_search_token:
+    file: ${SPLUNK_SEARCH_TOKEN_PATH:?Set a private local token file path}
+networks:
+  log-search: {}

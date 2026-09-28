@@ -1,0 +1,14 @@
+# Opt-in read-only Datadog Kubernetes metrics for incident investigation.
+# Use with compose.yaml and a private service-token file outside the repository.
+services:
+  incident-service:
+    environment:
+      DATADOG_METRICS_URL: ${DATADOG_METRICS_URL:?Set the HTTPS Datadog /api/v2/query/timeseries URL}
+      DATADOG_TOKEN_FILE: /run/secrets/datadog_metrics_token
+    secrets: [datadog_metrics_token]
+    networks: [internal, infrastructure-search]
+secrets:
+  datadog_metrics_token:
+    file: ${DATADOG_TOKEN_PATH:?Set a private local Datadog token file path}
+networks:
+  infrastructure-search: {}

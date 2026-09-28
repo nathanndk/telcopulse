@@ -1,0 +1,26 @@
+# Failed business transactions; exclude idempotent replay logs.
+index=telcopulse sourcetype=_json msg="transaction completed" replayed=false status=FAILED
+| dedup transaction_id
+| table time environment service transaction_id trace_id msisdn_masked error_code duration_ms
+
+# Business success rate, distinct outcomes rather than HTTP success.
+index=telcopulse sourcetype=_json msg="transaction completed" replayed=false
+| dedup transaction_id
+| stats count AS total count(eval(status="SUCCESS")) AS successful BY environment
+| eval success_percent=round(100*successful/total,2)
+
+# Timeout investigation. Set the time picker to the incident interval.
+index=telcopulse sourcetype=_json error_code=DB_TIMEOUT replayed=false
+| dedup transaction_id
+| stats count AS failed_transactions values(trace_id) AS traces perc95(duration_ms) AS p95_ms BY environment service version
+
+# Correlate one transaction through service logs. Replace the fictional ID.
+index=telcopulse sourcetype=_json transaction_id="TXN-REPLACE_WITH_TRANSACTION_ID"
+| sort 0 time
+| table time service environment level msg status error_code trace_id span_id
+
+# Version-specific failure distribution within the selected incident period.
+index=telcopulse sourcetype=_json msg="transaction completed" replayed=false
+| dedup transaction_id
+| stats count AS outcomes count(eval(status="FAILED")) AS failures BY environment version
+| eval failure_percent=round(100*failures/outcomes,2)

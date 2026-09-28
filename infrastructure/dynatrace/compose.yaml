@@ -1,0 +1,23 @@
+# Opt-in OTLP/HTTP trace export. Requires a private authorization file.
+x-dynatrace-environment: &dynatrace-environment
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${DYNATRACE_OTLP_ENDPOINT:?Set the HTTPS /api/v2/otlp base endpoint}
+  OTEL_EXPORTER_OTLP_AUTHORIZATION_FILE: /run/secrets/dynatrace_authorization
+x-dynatrace-service: &dynatrace-service
+  environment: *dynatrace-environment
+  secrets: [dynatrace_authorization]
+  networks: [internal, trace-export]
+services:
+  auth-service: *dynatrace-service
+  api-gateway: *dynatrace-service
+  subscriber-service: *dynatrace-service
+  package-service: *dynatrace-service
+  payment-service: *dynatrace-service
+  notification-service: *dynatrace-service
+  incident-service: *dynatrace-service
+  simulation-service: *dynatrace-service
+  deployment-service: *dynatrace-service
+secrets:
+  dynatrace_authorization:
+    file: ${DYNATRACE_AUTHORIZATION_PATH:?Set a private local authorization file path}
+networks:
+  trace-export: {}
