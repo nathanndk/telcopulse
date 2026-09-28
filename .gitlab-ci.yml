@@ -1,0 +1,109 @@
+stages:
+  - verify
+  - quality
+  - publish
+
+# Merge requests get the same source checks as the protected default branch.
+# Only the protected branch can read publishing credentials or create images.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+frontend:
+  stage: verify
+  image: node:22-alpine
+  script:
+    - npm ci
+    - npm run lint
+    - npm run typecheck
+    - npm run build
+
+go-unit:
+  stage: verify
+  image: golang:1.25-bookworm
+  variables:
+    GOTOOLCHAIN: local
+  script:
+    - cd services
+    - go vet ./...
+    - go test -race -coverprofile=coverage.out ./...
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - services/coverage.out
+
+go-postgres-integration:
+  stage: verify
+  image: golang:1.25-bookworm
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    GOTOOLCHAIN: local
+    POSTGRES_DB: telcopulse_test
+    POSTGRES_USER: telcopulse_test
+    # A disposable CI-only database on an isolated runner network.
+    POSTGRES_HOST_AUTH_METHOD: trust
+    DATABASE_URL: postgres://telcopulse_test@postgres:5432/telcopulse_test?sslmode=disable
+    TEST_DATABASE_URL: postgres://telcopulse_test@postgres:5432/telcopulse_test?sslmode=disable
+    APP_MODE: local
+    MIGRATE_ONLY: "true"
+  script:
+    - cd services
+    - go build -o /tmp/telcopulse-migrate ./api-gateway/cmd/api
+    - 'for attempt in 1 2 3 4 5 6 7 8 9 10; do if /tmp/telcopulse-migrate; then break; fi; if [ "$attempt" = 10 ]; then exit 1; fi; sleep 2; done'
+    - go test -race ./...
+
+helm-render:
+  stage: verify
+  image:
+    name: alpine/helm:3.22.0
+    entrypoint: [""]
+  script:
+    - helm lint --strict infrastructure/helm/telcopulse
+    - 'for profile in dev staging production; do helm template telcopulse infrastructure/helm/telcopulse --namespace "telcopulse-$profile" -f "infrastructure/helm/telcopulse/values-$profile.yaml" > "/tmp/telcopulse-$profile.yaml"; done'
+    - helm template telcopulse infrastructure/helm/telcopulse --namespace telcopulse-dev -f infrastructure/helm/telcopulse/values-dev.yaml --set bootstrap.enabled=true > /tmp/telcopulse-bootstrap.yaml
+    - helm package infrastructure/helm/telcopulse --destination .
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - telcopulse-*.tgz
+
+publication-contract:
+  stage: verify
+  image: alpine:3.22
+  script:
+    - sh tests/ci/publish-images.sh
+
+sonarqube:
+  stage: quality
+  image:
+    name: sonarsource/sonar-scanner-cli:11.1.0.1640_6.2.0
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "0"
+    SONAR_USER_HOME: "$CI_PROJECT_DIR/.sonar"
+  dependencies:
+    - go-unit
+  script:
+    - 'test -n "$SONAR_HOST_URL" && test -n "$SONAR_TOKEN"'
+    - sonar-scanner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'
+
+publish-images:
+  stage: publish
+  image: docker:29.8.1-cli
+  services:
+    - name: docker:29.8.1-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  dependencies: []
+  script:
+    - sh scripts/publish-images.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'

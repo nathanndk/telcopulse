@@ -1,0 +1,71 @@
+pipeline {
+  agent { label 'telcopulse-deploy' }
+  options {
+    disableConcurrentBuilds()
+    timestamps()
+    timeout(time: 30, unit: 'MINUTES')
+  }
+  parameters {
+    choice(name: 'ACTION', choices: ['DEPLOY', 'ROLLBACK', 'SMOKE'], description: 'Promote an image set, roll back a Helm revision, or check the current release')
+    choice(name: 'TARGET', choices: ['DEV', 'STAGING', 'PRODUCTION_LIKE'], description: 'PRODUCTION_LIKE is an isolated evaluation target, not a production service')
+    string(name: 'IMAGE_SHA', defaultValue: '', description: 'Full 40-character Git commit SHA for DEPLOY')
+    string(name: 'ROLLBACK_REVISION', defaultValue: '', description: 'Existing positive Helm revision for ROLLBACK')
+  }
+  stages {
+    stage('Preflight image set') {
+      when { expression { params.ACTION == 'DEPLOY' } }
+      steps {
+        withCredentials([
+          file(credentialsId: 'telcopulse-evaluation-kubeconfig', variable: 'KUBECONFIG'),
+          usernamePassword(credentialsId: 'telcopulse-registry-read', usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASSWORD')
+        ]) {
+          withEnv(['ACTION=PREFLIGHT_DEPLOY']) {
+            sh 'bash scripts/promote-release.sh'
+          }
+        }
+      }
+    }
+    stage('Preflight rollback') {
+      when { expression { params.ACTION == 'ROLLBACK' } }
+      steps {
+        withCredentials([file(credentialsId: 'telcopulse-evaluation-kubeconfig', variable: 'KUBECONFIG')]) {
+          withEnv(['ACTION=PREFLIGHT_ROLLBACK']) {
+            sh 'bash scripts/promote-release.sh'
+          }
+        }
+      }
+    }
+    stage('Approve production-like change') {
+      when {
+        beforeInput true
+        expression { params.TARGET == 'PRODUCTION_LIKE' && params.ACTION != 'SMOKE' }
+      }
+      input {
+        message "Approve ${params.ACTION} on isolated ${params.TARGET}? Image: ${params.IMAGE_SHA}; rollback revision: ${params.ROLLBACK_REVISION}"
+        ok 'Approve evaluation change'
+      }
+      steps {
+        echo 'Evaluation change approved'
+      }
+    }
+    stage('Deploy') {
+      when { expression { params.ACTION == 'DEPLOY' } }
+      steps {
+        withCredentials([
+          file(credentialsId: 'telcopulse-evaluation-kubeconfig', variable: 'KUBECONFIG'),
+          usernamePassword(credentialsId: 'telcopulse-registry-read', usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASSWORD')
+        ]) {
+          sh 'bash scripts/promote-release.sh'
+        }
+      }
+    }
+    stage('Rollback or smoke') {
+      when { expression { params.ACTION != 'DEPLOY' } }
+      steps {
+        withCredentials([file(credentialsId: 'telcopulse-evaluation-kubeconfig', variable: 'KUBECONFIG')]) {
+          sh 'bash scripts/promote-release.sh'
+        }
+      }
+    }
+  }
+}
