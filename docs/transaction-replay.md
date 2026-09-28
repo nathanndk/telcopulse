@@ -1,0 +1,7 @@
+# Failed synthetic transaction replay
+
+The Customer Simulator and a failed transaction's investigation page offer **Replay failed transaction**. The action asks for confirmation, then starts a new synthetic purchase with the source's customer, package, payment method and environment. It uses a new idempotency key, new transaction ID and new trace ID. The source remains unchanged; the new result carries `replay_of`, links back to the source, and appears as a separate business outcome in metrics, Kafka events and audit history. Replaying a failure is a new purchase, not resuming the old workflow. An active injection or unchanged business condition can make the new attempt fail again.
+
+The gateway accepts `replay_of` only when it names a persisted **FAILED** transaction in the same environment with exactly the same customer, package and payment method. Unknown, pending, successful, cross-environment and changed-configuration sources are rejected before remote service calls. Malformed IDs fail request validation. A network retry from the confirmation dialog retains the new attempt's idempotency key; it does not create a second attempt while the first result is uncertain. Only roles with purchase permission see the action.
+
+This is for synthetic development and staging subscribers. It does not replay Kafka dead letters or authorize production customer payment retries. The operator should inspect the source error and current simulation state before confirming a new attempt.

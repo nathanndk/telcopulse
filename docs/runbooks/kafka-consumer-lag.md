@@ -1,0 +1,11 @@
+# Kafka consumer lag
+
+**Trigger and scope.** `NotificationConsumerLag` fires when the sum of measured `kafka_consumer_lag` exceeds ten for 30 seconds. `KafkaLagMeasurementUnavailable` means collection failed; it is not a zero-lag reading. Kafka lag affects notification delivery and may not change the already committed purchase outcome.
+
+**Triage.** Inspect `kafka_consumer_lag{group,topic,partition}`, `kafka_lag_collection_success`, `event_outbox_pending` and `event_outbox_oldest_age_seconds`. Separate producer publication delay from consumer processing delay. Compare broker end offsets with the notification group's committed offsets and check notification-service logs and the Services dead-letter register for poison records and publication state. Correlate sample transaction IDs with durable notification deliveries; never infer message loss from lag alone.
+
+**Differentiate.** The local `kafka-consumer-lag` simulation delays selected notification records, but the consumer processes one record at a time and can hold other environments behind them. A stopped/expired run stops *new* waits; an already started wait can finish later. Broker outage, consumer crash, deserialization failures and downstream storage slowness require different mitigation. If lag metrics are unavailable, restore measurement before claiming recovery.
+
+**Mitigate.** Stop a verified active lag simulation in Customer Simulator, then let the durable consumer drain. For a real incident, restore broker/consumer availability or the failing downstream dependency. Do not reset offsets or delete a topic as a generic fix; that can skip undelivered notifications. Poison records are retained in `notification.dead_letters` and announced through `telcopulse.notification.dead-letter.v1` with source coordinates and a digest, not raw payload. Preserve the source coordinates for restricted database investigation; do not republish raw poison payloads as a generic recovery action.
+
+**Recover and close.** Check lag trends down to zero (or the established baseline), collection stays successful, pending outbox age clears, and affected transaction IDs have one durable delivery each. A successful purchase alone is not proof the notification path recovered. Record the backlog peak, delay window, delivery verification and follow-up action.
