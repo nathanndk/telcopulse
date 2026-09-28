@@ -4,4 +4,3 @@ metadata:
   name: telcopulse-dev
   labels:
     app.kubernetes.io/part-of: telcopulse
-
