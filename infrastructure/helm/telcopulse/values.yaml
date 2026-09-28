@@ -1,0 +1,106 @@
+image:
+  registry: registry.example.invalid/telcopulse
+  tag: dev
+  pullPolicy: IfNotPresent
+
+existingSecret: telcopulse-runtime
+imagePullSecrets: []
+
+runtime:
+  appMode: local
+  authRequired: "true"
+  webOrigin: https://telcopulse.example.invalid
+  otlpEndpoint: ""
+  redisURL: redis://redis:6379/0
+  kafkaBrokers: kafka:9092
+  prometheusURL: ""
+  prometheusViewerURL: ""
+  traceViewerURL: ""
+  prometheusEnvironment: development
+  prometheusSource: kubernetes-prometheus
+  purchasesPerMinute: "60"
+
+# Values below contain endpoints and existing Secret key names, never credentials.
+observability:
+  splunk:
+    hecURL: ""
+    hecIndex: telcopulse
+    hecTokenKey: SPLUNK_HEC_TOKEN
+    searchURL: ""
+    searchIndex: telcopulse
+    searchTokenKey: SPLUNK_SEARCH_TOKEN
+  otlp:
+    authorizationKey: ""
+    certificateKey: ""
+  jaeger:
+    queryURL: ""
+  datadog:
+    metricsURL: ""
+    tokenKey: DATADOG_TOKEN
+
+migration:
+  enabled: true
+
+bootstrap:
+  # The one-time local account bootstrap requires AUTH_BOOTSTRAP_PASSWORD in
+  # existingSecret. Disable when the database already has an administrator.
+  enabled: false
+
+serviceAccount:
+  create: true
+
+ingress:
+  enabled: false
+  className: ""
+  host: telcopulse.example.invalid
+  tlsSecretName: ""
+  annotations: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+pdb:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+services:
+  auth-service:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN]
+  subscriber-service:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN]
+  package-service:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN]
+  payment-service:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN]
+  notification-service:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN, NOTIFICATION_OPERATOR_TOKEN]
+  incident-service:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN, INCIDENT_OPERATOR_TOKEN]
+  simulation-service:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN, SIMULATION_OPERATOR_TOKEN]
+  deployment-service:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN]
+  api-gateway:
+    replicas: 1
+    secretKeys: [DATABASE_URL, SERVICE_TOKEN, INCIDENT_OPERATOR_TOKEN, SIMULATION_OPERATOR_TOKEN, NOTIFICATION_OPERATOR_TOKEN]
+  web:
+    replicas: 1
+    secretKeys: []

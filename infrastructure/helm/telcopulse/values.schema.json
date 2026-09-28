@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "existingSecret", "runtime", "services"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["registry", "tag"],
+      "properties": {
+        "registry": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "existingSecret": { "type": "string", "minLength": 1 },
+    "runtime": {
+      "type": "object",
+      "required": ["appMode", "authRequired", "webOrigin", "prometheusEnvironment"],
+      "properties": {
+        "appMode": { "const": "local" },
+        "authRequired": { "const": "true" },
+        "webOrigin": { "type": "string", "pattern": "^https://[^/]+$" },
+        "prometheusEnvironment": { "enum": ["development", "staging"] },
+        "purchasesPerMinute": { "type": "string", "pattern": "^[1-9][0-9]*$" }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "splunk": { "type": "object" },
+        "otlp": { "type": "object" },
+        "jaeger": { "type": "object" },
+        "datadog": { "type": "object" }
+      }
+    },
+    "services": {
+      "type": "object",
+      "minProperties": 10,
+      "required": ["auth-service", "subscriber-service", "package-service", "payment-service", "notification-service", "incident-service", "simulation-service", "deployment-service", "api-gateway", "web"]
+    },
+    "autoscaling": {
+      "type": "object",
+      "properties": {
+        "minReplicas": { "type": "integer", "minimum": 2 },
+        "maxReplicas": { "type": "integer", "minimum": 2 },
+        "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    }
+  }
+}

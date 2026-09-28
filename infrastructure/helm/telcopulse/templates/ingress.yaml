@@ -1,0 +1,36 @@
+{{- if .Values.ingress.enabled }}
+{{- if ne .Values.runtime.webOrigin (printf "https://%s" .Values.ingress.host) }}{{ fail "runtime.webOrigin must match https://ingress.host for cookie origin checks" }}{{- end }}
+{{- if not .Values.ingress.tlsSecretName }}{{ fail "ingress.tlsSecretName is required when ingress is enabled" }}{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: telcopulse-web
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: telcopulse
+  {{- with .Values.ingress.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.ingress.tlsSecretName }}
+  tls:
+    - hosts:
+        - {{ $.Values.ingress.host | quote }}
+      secretName: {{ . | quote }}
+  {{- end }}
+  rules:
+    - host: {{ required "ingress.host is required" .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  name: http
+{{- end }}

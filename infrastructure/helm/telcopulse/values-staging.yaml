@@ -1,0 +1,16 @@
+image:
+  tag: staging
+runtime:
+  webOrigin: https://telcopulse-staging.example.invalid
+  prometheusEnvironment: staging
+ingress:
+  enabled: true
+  host: telcopulse-staging.example.invalid
+  tlsSecretName: telcopulse-staging-tls
+services:
+  api-gateway:
+    replicas: 2
+  web:
+    replicas: 2
+pdb:
+  enabled: true

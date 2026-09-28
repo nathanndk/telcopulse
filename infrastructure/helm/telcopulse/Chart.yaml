@@ -1,0 +1,7 @@
+apiVersion: v2
+name: telcopulse
+description: TelcoPulse application services for a protected Kubernetes evaluation namespace
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

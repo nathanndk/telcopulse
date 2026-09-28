@@ -1,0 +1,7 @@
+runtime:
+  webOrigin: https://telcopulse-dev.example.invalid
+  prometheusEnvironment: development
+ingress:
+  enabled: true
+  host: telcopulse-dev.example.invalid
+  tlsSecretName: telcopulse-dev-tls

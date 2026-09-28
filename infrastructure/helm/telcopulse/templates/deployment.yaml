@@ -1,0 +1,171 @@
+{{- range $name, $service := .Values.services }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/part-of: telcopulse
+spec:
+  {{- if not (and $.Values.autoscaling.enabled (or (eq $name "api-gateway") (eq $name "web"))) }}
+  replicas: {{ $service.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/part-of: telcopulse
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+    spec:
+      serviceAccountName: telcopulse-app
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ $name }}
+          image: {{ printf "%s/%s:%s" $.Values.image.registry $name $.Values.image.tag | quote }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: {{ ne $name "web" }}
+          ports:
+            - name: http
+              containerPort: {{ if eq $name "web" }}3000{{ else }}8080{{ end }}
+          envFrom:
+            - configMapRef:
+                name: {{ $name }}-config
+          {{- if $service.secretKeys }}
+          env:
+            {{- range $key := $service.secretKeys }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.existingSecret }}
+                  key: {{ $key }}
+            {{- end }}
+          {{- end }}
+          {{- if ne $name "web" }}
+          {{- if or $.Values.observability.splunk.hecURL (and (eq $name "incident-service") $.Values.observability.splunk.searchURL) (and (eq $name "incident-service") $.Values.observability.datadog.metricsURL) $.Values.observability.otlp.authorizationKey $.Values.observability.otlp.certificateKey }}
+          volumeMounts:
+            {{- if $.Values.observability.splunk.hecURL }}
+            - name: splunk-hec-token
+              mountPath: /run/secrets/splunk-hec
+              readOnly: true
+            {{- end }}
+            {{- if and (eq $name "incident-service") $.Values.observability.splunk.searchURL }}
+            - name: splunk-search-token
+              mountPath: /run/secrets/splunk-search
+              readOnly: true
+            {{- end }}
+            {{- if and (eq $name "incident-service") $.Values.observability.datadog.metricsURL }}
+            - name: datadog-token
+              mountPath: /run/secrets/datadog
+              readOnly: true
+            {{- end }}
+            {{- if $.Values.observability.otlp.authorizationKey }}
+            - name: otel-authorization
+              mountPath: /run/secrets/otel
+              readOnly: true
+            {{- end }}
+            {{- if $.Values.observability.otlp.certificateKey }}
+            - name: otel-ca
+              mountPath: /run/secrets/otel-ca
+              readOnly: true
+            {{- end }}
+          {{- end }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: {{ if eq $name "web" }}/{{ else }}/healthz{{ end }}
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: {{ if eq $name "web" }}/{{ else }}/readyz{{ end }}
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: {{ if eq $name "web" }}/{{ else }}/healthz{{ end }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          resources:
+{{ toYaml (default $.Values.resources $service.resources) | indent 12 }}
+      {{- if ne $name "web" }}
+      {{- if or $.Values.observability.splunk.hecURL (and (eq $name "incident-service") $.Values.observability.splunk.searchURL) (and (eq $name "incident-service") $.Values.observability.datadog.metricsURL) $.Values.observability.otlp.authorizationKey $.Values.observability.otlp.certificateKey }}
+      volumes:
+        {{- if $.Values.observability.splunk.hecURL }}
+        - name: splunk-hec-token
+          secret:
+            secretName: {{ $.Values.existingSecret }}
+            defaultMode: 0444
+            items:
+              - key: {{ $.Values.observability.splunk.hecTokenKey }}
+                path: token
+        {{- end }}
+        {{- if and (eq $name "incident-service") $.Values.observability.splunk.searchURL }}
+        - name: splunk-search-token
+          secret:
+            secretName: {{ $.Values.existingSecret }}
+            defaultMode: 0444
+            items:
+              - key: {{ $.Values.observability.splunk.searchTokenKey }}
+                path: token
+        {{- end }}
+        {{- if and (eq $name "incident-service") $.Values.observability.datadog.metricsURL }}
+        - name: datadog-token
+          secret:
+            secretName: {{ $.Values.existingSecret }}
+            defaultMode: 0444
+            items:
+              - key: {{ $.Values.observability.datadog.tokenKey }}
+                path: token
+        {{- end }}
+        {{- if $.Values.observability.otlp.authorizationKey }}
+        - name: otel-authorization
+          secret:
+            secretName: {{ $.Values.existingSecret }}
+            defaultMode: 0444
+            items:
+              - key: {{ $.Values.observability.otlp.authorizationKey }}
+                path: authorization
+        {{- end }}
+        {{- if $.Values.observability.otlp.certificateKey }}
+        - name: otel-ca
+          secret:
+            secretName: {{ $.Values.existingSecret }}
+            defaultMode: 0444
+            items:
+              - key: {{ $.Values.observability.otlp.certificateKey }}
+                path: certificate
+        {{- end }}
+      {{- end }}
+      {{- end }}
+---
+{{- end }}

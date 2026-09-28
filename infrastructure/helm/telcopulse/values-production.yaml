@@ -1,0 +1,21 @@
+# Renderable deployment example only. APP_MODE=local and local-account auth are
+# still code-level constraints; do not deploy this as a production system.
+image:
+  tag: production-candidate
+runtime:
+  webOrigin: https://telcopulse.example.invalid
+  # The application currently accepts only development/staging data scopes.
+  prometheusEnvironment: staging
+ingress:
+  enabled: true
+  host: telcopulse.example.invalid
+  tlsSecretName: telcopulse-tls
+services:
+  api-gateway:
+    replicas: 2
+  web:
+    replicas: 2
+autoscaling:
+  enabled: true
+pdb:
+  enabled: true

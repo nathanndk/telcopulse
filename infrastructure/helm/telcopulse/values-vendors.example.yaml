@@ -1,0 +1,16 @@
+# Overlay for a protected evaluation namespace. Replace the fictional HTTPS
+# hosts and create the named keys in existingSecret before installation.
+# No credentials belong in this file.
+runtime:
+  otlpEndpoint: https://dynatrace.example.invalid/api/v2/otlp
+observability:
+  splunk:
+    hecURL: https://splunk.example.invalid/services/collector/event
+    searchURL: https://splunk.example.invalid/services/search/v2/jobs
+  otlp:
+    authorizationKey: OTLP_AUTHORIZATION
+    certificateKey: OTLP_CA_CERTIFICATE
+  jaeger:
+    queryURL: https://jaeger.example.invalid
+  datadog:
+    metricsURL: https://api.datadoghq.example.invalid/api/v2/query/timeseries

@@ -1,0 +1,67 @@
+{{- range $name, $service := .Values.services }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/part-of: telcopulse
+data:
+{{- if eq $name "web" }}
+  TRACE_VIEWER_URL: {{ $.Values.runtime.traceViewerURL | quote }}
+{{- else }}
+  APP_MODE: {{ $.Values.runtime.appMode | quote }}
+  LISTEN_ADDR: "0.0.0.0:8080"
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ $.Values.runtime.otlpEndpoint | quote }}
+  {{- if $.Values.observability.otlp.authorizationKey }}
+  OTEL_EXPORTER_OTLP_AUTHORIZATION_FILE: "/run/secrets/otel/authorization"
+  {{- end }}
+  {{- if $.Values.observability.otlp.certificateKey }}
+  OTEL_EXPORTER_OTLP_CERTIFICATE: "/run/secrets/otel-ca/certificate"
+  {{- end }}
+  {{- if $.Values.observability.splunk.hecURL }}
+  SPLUNK_HEC_URL: {{ $.Values.observability.splunk.hecURL | quote }}
+  SPLUNK_HEC_INDEX: {{ $.Values.observability.splunk.hecIndex | quote }}
+  SPLUNK_HEC_TOKEN_FILE: "/run/secrets/splunk-hec/token"
+  {{- end }}
+  {{- if eq $name "api-gateway" }}
+  AUTH_REQUIRED: {{ $.Values.runtime.authRequired | quote }}
+  WEB_ORIGIN: {{ $.Values.runtime.webOrigin | quote }}
+  AUTH_URL: "http://auth-service:8080"
+  SUBSCRIBER_URL: "http://subscriber-service:8080"
+  PACKAGE_URL: "http://package-service:8080"
+  PAYMENT_URL: "http://payment-service:8080"
+  NOTIFICATION_URL: "http://notification-service:8080"
+  INCIDENT_URL: "http://incident-service:8080"
+  SIMULATION_URL: "http://simulation-service:8080"
+  DEPLOYMENT_URL: "http://deployment-service:8080"
+  REDIS_URL: {{ $.Values.runtime.redisURL | quote }}
+  KAFKA_BROKERS: {{ $.Values.runtime.kafkaBrokers | quote }}
+  PROMETHEUS_URL: {{ $.Values.runtime.prometheusURL | quote }}
+  PURCHASES_PER_MINUTE: {{ $.Values.runtime.purchasesPerMinute | quote }}
+  {{- else if eq $name "incident-service" }}
+  PROMETHEUS_URL: {{ $.Values.runtime.prometheusURL | quote }}
+  PROMETHEUS_VIEWER_URL: {{ $.Values.runtime.prometheusViewerURL | quote }}
+  PROMETHEUS_SOURCE: {{ $.Values.runtime.prometheusSource | quote }}
+  PROMETHEUS_ENVIRONMENT: {{ $.Values.runtime.prometheusEnvironment | quote }}
+  {{- if $.Values.observability.splunk.searchURL }}
+  SPLUNK_SEARCH_URL: {{ $.Values.observability.splunk.searchURL | quote }}
+  SPLUNK_SEARCH_INDEX: {{ $.Values.observability.splunk.searchIndex | quote }}
+  SPLUNK_SEARCH_TOKEN_FILE: "/run/secrets/splunk-search/token"
+  {{- end }}
+  {{- if $.Values.observability.jaeger.queryURL }}
+  JAEGER_QUERY_URL: {{ $.Values.observability.jaeger.queryURL | quote }}
+  {{- end }}
+  {{- if $.Values.observability.datadog.metricsURL }}
+  DATADOG_METRICS_URL: {{ $.Values.observability.datadog.metricsURL | quote }}
+  DATADOG_TOKEN_FILE: "/run/secrets/datadog/token"
+  {{- end }}
+  {{- else if eq $name "simulation-service" }}
+  DEPLOYMENT_URL: "http://deployment-service:8080"
+  {{- else if or (eq $name "payment-service") (eq $name "notification-service") }}
+  KAFKA_BROKERS: {{ $.Values.runtime.kafkaBrokers | quote }}
+  SIMULATION_URL: "http://simulation-service:8080"
+  {{- end }}
+{{- end }}
+---
+{{- end }}

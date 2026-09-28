@@ -1,0 +1,38 @@
+{{- $o := .Values.observability -}}
+{{- $httpsHost := `^https://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]+)?` -}}
+{{- if and $o.splunk.hecURL (not (regexMatch (printf `%s/services/collector/event$` $httpsHost) $o.splunk.hecURL)) -}}
+{{- fail "observability.splunk.hecURL must be an HTTPS /services/collector/event endpoint without credentials, query or fragment" -}}
+{{- end -}}
+{{- if and $o.splunk.searchURL (not (regexMatch (printf `%s/services/search/v2/jobs$` $httpsHost) $o.splunk.searchURL)) -}}
+{{- fail "observability.splunk.searchURL must be an HTTPS /services/search/v2/jobs endpoint without credentials, query or fragment" -}}
+{{- end -}}
+{{- if and $o.datadog.metricsURL (not (regexMatch (printf `%s/api/v2/query/timeseries$` $httpsHost) $o.datadog.metricsURL)) -}}
+{{- fail "observability.datadog.metricsURL must be an HTTPS /api/v2/query/timeseries endpoint without credentials, query or fragment" -}}
+{{- end -}}
+{{- if and $o.jaeger.queryURL (not (or (regexMatch (printf `%s/?$` $httpsHost) $o.jaeger.queryURL) (regexMatch `^http://jaeger(:[0-9]+)?/?$` $o.jaeger.queryURL))) -}}
+{{- fail "observability.jaeger.queryURL must be HTTPS or the local Jaeger service URL" -}}
+{{- end -}}
+{{- if $o.otlp.authorizationKey -}}
+  {{- if not (regexMatch (printf `%s(/[A-Za-z0-9._~!$&'()*+,;=:@%%/-]*)?$` $httpsHost) .Values.runtime.otlpEndpoint) -}}
+    {{- fail "authenticated OTLP requires an HTTPS runtime.otlpEndpoint without credentials, query or fragment" -}}
+  {{- end -}}
+{{- end -}}
+{{- if and $o.otlp.certificateKey (not (regexMatch (printf `%s(/[A-Za-z0-9._~!$&'()*+,;=:@%%/-]*)?$` $httpsHost) .Values.runtime.otlpEndpoint)) -}}
+{{- fail "OTLP CA certificate requires an HTTPS runtime.otlpEndpoint without credentials, query or fragment" -}}
+{{- end -}}
+{{- if not (regexMatch `^[A-Za-z][A-Za-z0-9_-]{0,99}$` $o.splunk.hecIndex) -}}
+{{- fail "observability.splunk.hecIndex must be a simple index name" -}}
+{{- end -}}
+{{- if not (regexMatch `^[A-Za-z][A-Za-z0-9_-]{0,99}$` $o.splunk.searchIndex) -}}
+{{- fail "observability.splunk.searchIndex must be a simple index name" -}}
+{{- end -}}
+{{- range $name, $key := dict "Splunk HEC" $o.splunk.hecTokenKey "Splunk Search" $o.splunk.searchTokenKey "Datadog" $o.datadog.tokenKey -}}
+  {{- if not (regexMatch `^[A-Za-z0-9._-]+$` $key) -}}
+    {{- fail (printf "%s Secret key must be a valid Kubernetes Secret key name" $name) -}}
+  {{- end -}}
+{{- end -}}
+{{- range $name, $key := dict "OTLP authorization" $o.otlp.authorizationKey "OTLP CA" $o.otlp.certificateKey -}}
+  {{- if and $key (not (regexMatch `^[A-Za-z0-9._-]+$` $key)) -}}
+    {{- fail (printf "%s Secret key must be a valid Kubernetes Secret key name" $name) -}}
+  {{- end -}}
+{{- end -}}
