@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -24,6 +25,10 @@ func TestPurchaseSLOUsesCompletedEnvironmentWindow(t *testing.T) {
 	}
 	insert("slo-staging-ok", "staging", "SUCCESS", time.Now().Add(-time.Hour))
 	insert("slo-staging-failed", "staging", "FAILED", time.Now().Add(-time.Hour))
+	_, err = s.Pool.Exec(ctx, `INSERT INTO transactions(id,trace_id,idempotency_key,request_hash,customer_id,package_id,environment,status,created_at,result) VALUES('slo-staging-declined','slo-staging-declined-trace','slo-staging-declined-key','test','cus-001','pkg-10','staging','FAILED',now()-interval '1 hour','{"duration_ms":1,"error_code":"INSUFFICIENT_BALANCE"}')`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	insert("slo-development-failed", "development", "FAILED", time.Now().Add(-time.Hour))
 	insert("slo-staging-old", "staging", "FAILED", time.Now().Add(-31*24*time.Hour))
 	out, err := s.Overview(ctx, "staging")
@@ -31,7 +36,7 @@ func TestPurchaseSLOUsesCompletedEnvironmentWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	slo := out.PurchaseSLO
-	if slo.Total != 2 || slo.Success != 1 || slo.Failed != 1 || slo.CurrentPercent == nil || *slo.CurrentPercent != 50 || slo.BudgetRemaining != 0 || slo.BudgetConsumedPercent == nil || *slo.BudgetConsumedPercent < 100 {
+	if slo.Total != 3 || slo.Success != 1 || slo.Failed != 2 || slo.TechnicalFailed != 1 || slo.BusinessDeclined != 1 || slo.CurrentPercent == nil || math.Abs(*slo.CurrentPercent-200.0/3) > 1e-9 || slo.BudgetRemaining != 0 || slo.BudgetConsumedPercent == nil || *slo.BudgetConsumedPercent < 100 {
 		t.Fatalf("SLO includes the wrong transactions: %+v", slo)
 	}
 	if duration := slo.WindowEnd.Sub(slo.WindowStart); duration != 30*24*time.Hour {
@@ -41,7 +46,7 @@ func TestPurchaseSLOUsesCompletedEnvironmentWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	again, err := s.Overview(ctx, "staging")
-	if err != nil || again.PurchaseSLO.Total != 3 || again.PurchaseSLO.Success != 2 {
+	if err != nil || again.PurchaseSLO.Total != 4 || again.PurchaseSLO.Success != 2 {
 		t.Fatalf("new committed purchase missing from SLO: %+v %v", again.PurchaseSLO, err)
 	}
 }

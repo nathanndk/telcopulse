@@ -6,6 +6,8 @@ const overview = {
   total: 0,
   success: 0,
   failed: 0,
+  technical_failed: 0,
+  business_declined: 0,
   success_rate: 0,
   p95_ms: 0,
   per_minute: 0,
@@ -17,6 +19,8 @@ const overview = {
     total: 0,
     success: 0,
     failed: 0,
+    technical_failed: 0,
+    business_declined: 0,
     current_percent: null,
     allowed_failures: 0,
     budget_remaining: 0,
@@ -42,7 +46,7 @@ test("live SLO follows the selected environment's durable overview", async ({ pa
       await expect(panel.getByText("No completed purchases")).toBeVisible();
     } else {
       await expect(panel.getByText(`${data.purchase_slo.current_percent.toFixed(2)}%`, { exact: true })).toBeVisible();
-      await expect(panel.getByText(`${data.purchase_slo.success} of ${data.purchase_slo.total} succeeded`)).toBeVisible();
+      await expect(panel.getByText(`${data.purchase_slo.total - data.purchase_slo.technical_failed} of ${data.purchase_slo.total} without technical failure`)).toBeVisible();
     }
   }
 });
@@ -64,6 +68,8 @@ test("purchase SLO distinguishes no traffic from an exhausted error budget", asy
               total: 1000,
               success: 998,
               failed: 2,
+              technical_failed: 2,
+              business_declined: 0,
               current_percent: 99.8,
               allowed_failures: 1,
               budget_remaining: 0,

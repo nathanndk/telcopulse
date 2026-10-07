@@ -99,10 +99,11 @@ func (s *Store) Transactions(ctx context.Context, env, status, search string, pa
 // Overview computes the last hour's business metrics and minute buckets.
 func (s *Store) Overview(ctx context.Context, env string) (domain.Overview, error) {
 	out := domain.Overview{Series: []domain.Point{}}
-	err := s.Pool.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE status='SUCCESS'),count(*) FILTER(WHERE status='FAILED'),COALESCE(percentile_cont(0.95) WITHIN GROUP(ORDER BY (result->>'duration_ms')::float),0),count(*) FILTER(WHERE created_at>now()-interval '1 minute') FROM transactions WHERE environment=$1 AND created_at>now()-interval '1 hour'`, env).Scan(&out.Total, &out.Success, &out.Failed, &out.P95MS, &out.PerMinute)
+	err := s.Pool.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE status='SUCCESS'),count(*) FILTER(WHERE status='FAILED'),count(*) FILTER(WHERE status='FAILED' AND COALESCE(result->>'error_code','')=ANY($2)),COALESCE(percentile_cont(0.95) WITHIN GROUP(ORDER BY (result->>'duration_ms')::float),0),count(*) FILTER(WHERE created_at>now()-interval '1 minute') FROM transactions WHERE environment=$1 AND created_at>now()-interval '1 hour'`, env, domain.BusinessDeclineCodes()).Scan(&out.Total, &out.Success, &out.Failed, &out.BusinessDeclined, &out.P95MS, &out.PerMinute)
 	if err != nil {
 		return out, err
 	}
+	out.TechnicalFailed = out.Failed - out.BusinessDeclined
 	if out.Total > 0 {
 		out.SuccessRate = 100 * float64(out.Success) / float64(out.Total)
 	}
@@ -122,12 +123,12 @@ func (s *Store) Overview(ctx context.Context, env string) (domain.Overview, erro
 		return out, err
 	}
 	var start, end time.Time
-	var success, failed int64
-	err = s.Pool.QueryRow(ctx, `SELECT now()-interval '30 days',now(),count(*) FILTER(WHERE status='SUCCESS'),count(*) FILTER(WHERE status='FAILED') FROM transactions WHERE environment=$1 AND created_at>=now()-interval '30 days' AND created_at<now()`, env).Scan(&start, &end, &success, &failed)
+	var success, technical, declined int64
+	err = s.Pool.QueryRow(ctx, `SELECT now()-interval '30 days',now(),count(*) FILTER(WHERE status='SUCCESS'),count(*) FILTER(WHERE status='FAILED' AND NOT COALESCE(result->>'error_code','')=ANY($2)),count(*) FILTER(WHERE status='FAILED' AND COALESCE(result->>'error_code','')=ANY($2)) FROM transactions WHERE environment=$1 AND created_at>=now()-interval '30 days' AND created_at<now()`, env, domain.BusinessDeclineCodes()).Scan(&start, &end, &success, &technical, &declined)
 	if err != nil {
 		return out, err
 	}
-	out.PurchaseSLO = domain.NewPurchaseSLO(start, end, success, failed)
+	out.PurchaseSLO = domain.NewPurchaseSLO(start, end, success, technical, declined)
 	return out, nil
 }
 

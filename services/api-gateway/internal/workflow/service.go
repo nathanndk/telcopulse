@@ -340,7 +340,7 @@ func (s *Service) execute(ctx context.Context, key string, p domain.Purchase, re
 		return result, err
 	}
 	if s.Metrics != nil {
-		s.Metrics.Business(result.Environment, result.Status, result.DurationMS/1000)
+		s.Metrics.Business(result.Environment, result.Status, domain.FailureClass(result.Status, result.ErrorCode), result.DurationMS/1000)
 	}
 	return result, nil
 }

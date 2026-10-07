@@ -1,7 +1,11 @@
 """Exercise local synthetic purchase SLO burn through Prometheus and incident ingestion.
 
-Creates six durable, intentionally declined development purchases. Run only against
-the disposable/local demo stack; the script never alters or resolves an incident.
+Starts a bounded 100% payment-decline simulation in development, creates six durable
+purchases that fail with SIMULATED_PAYMENT_DECLINED (a technical failure that burns the
+error budget), and always stops the simulation. Business declines such as
+INSUFFICIENT_BALANCE deliberately do not burn the budget, so they cannot drive this test.
+Run only against the disposable/local demo stack; the script never alters or resolves an
+incident.
 """
 
 import json
@@ -38,16 +42,29 @@ def wait_for(check, description, timeout=120):
     raise AssertionError("timed out waiting for " + description)
 
 
-def failed_purchase():
+def call(path, data=None, key=None):
+    headers = {"Content-Type": "application/json", "Origin": WEB_URL}
+    if key:
+        headers["Idempotency-Key"] = key
     request = urllib.request.Request(
-        WEB_URL + "/api/v1/transactions",
-        data=json.dumps({"customer_id": "cus-003", "package_id": "pkg-25", "payment_method": "Pulsa", "environment": "development"}).encode(),
-        headers={"Content-Type": "application/json", "Idempotency-Key": uuid.uuid4().hex, "Origin": WEB_URL},
+        WEB_URL + "/api/v1" + path,
+        data=None if data is None else json.dumps(data).encode(),
+        headers=headers,
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        purchase = json.load(response)
-        assert response.status in (200, 201) and purchase["status"] == "FAILED", purchase
-        return purchase["id"]
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return response.status, json.load(response)
+
+
+def failed_purchase():
+    payload = {"customer_id": "cus-001", "package_id": "pkg-10", "payment_method": "E-Wallet", "environment": "development"}
+    status, purchase = call("/transactions", payload, uuid.uuid4().hex)
+    deadline = time.monotonic() + 20
+    while purchase["status"] == "PROCESSING" and time.monotonic() < deadline:
+        time.sleep(1)
+        _, purchase = call("/transactions/" + purchase["id"])
+    assert status in (200, 201, 202) and purchase["status"] == "FAILED", purchase
+    assert purchase["error_code"] == "SIMULATED_PAYMENT_DECLINED", purchase
+    return purchase["id"]
 
 
 def parse_time(value):
@@ -56,7 +73,7 @@ def parse_time(value):
 
 def main():
     assert not query('ALERTS{alertname="BusinessSuccessRateLow",environment="development"}'), "alert already active"
-    before = query('sum(transaction_total{environment="development",status="FAILED"})')
+    before = query('sum(transaction_total{environment="development",status="FAILED",failure_class="technical"})')
     baseline = float(before[0]["value"][1]) if before else 0.0
     wait_for(
         lambda: (rows := query('up{job="telcopulse",service="api-gateway"}')) and float(rows[0]["value"][1]) == 1,
@@ -65,10 +82,20 @@ def main():
     time.sleep(6)  # Establish a counter sample before the outcomes arrive.
 
     started_at = datetime.now(timezone.utc)
-    purchase_ids = [failed_purchase() for _ in range(6)]
+    _, run = call(
+        "/simulations",
+        {"environment": "development", "scenario": "payment-decline", "percentage": 100, "duration_seconds": 30, "reason": "Verify SLO burn from technical failures"},
+        uuid.uuid4().hex,
+    )
+    assert run["active"], run
+    try:
+        purchase_ids = [failed_purchase() for _ in range(6)]
+    finally:
+        _, stopped = call("/simulations/" + run["id"] + "/stop", {"reason": "SLO burn verification complete; restore new purchases"})
+        assert not stopped["active"] and stopped["stopped_at"], stopped
     wait_for(
-        lambda: (rows := query('sum(transaction_total{environment="development",status="FAILED"})')) and float(rows[0]["value"][1]) >= baseline + 6,
-        "six terminal failures in Prometheus",
+        lambda: (rows := query('sum(transaction_total{environment="development",status="FAILED",failure_class="technical"})')) and float(rows[0]["value"][1]) >= baseline + 6,
+        "six technical failures in Prometheus",
     )
     wait_for(
         lambda: (rows := query('telcopulse:business_failure_ratio:increase5m{environment="development"}')) and float(rows[0]["value"][1]) > 0.0144,
@@ -90,7 +117,7 @@ def main():
     incident = wait_for(ingested_incident, "incident from SLO burn")
     detail = get_json(WEB_URL + "/api/v1/incidents/" + incident["id"])["incident"]
     assert "paired 5m/1h or 30m/6h" in detail["evidence"][0]["summary"], detail
-    print(f"Six intentional declines {purchase_ids[0]}…{purchase_ids[-1]} fired an environment-scoped SLO alert and incident {incident['id']}")
+    print(f"Six simulated technical failures {purchase_ids[0]}…{purchase_ids[-1]} fired an environment-scoped SLO alert and incident {incident['id']}")
 
 
 if __name__ == "__main__":

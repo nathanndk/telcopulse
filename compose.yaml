@@ -112,7 +112,7 @@ services:
       PROMETHEUS_URL: http://prometheus:9090
       PROMETHEUS_SOURCE: local-prometheus
       PROMETHEUS_ENVIRONMENT: development
-      PROMETHEUS_VIEWER_URL: http://localhost:9090
+      PROMETHEUS_VIEWER_URL: ${PROMETHEUS_VIEWER_URL:-http://localhost:9090}
       JAEGER_QUERY_URL: ${JAEGER_QUERY_URL-http://jaeger:16686}
       APP_MODE: local
       DATABASE_URL: postgres://telcopulse:${POSTGRES_PASSWORD}@postgres:5432/telcopulse?sslmode=disable
@@ -277,7 +277,7 @@ services:
   prometheus:
     build: ./infrastructure/prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=2d", "--storage.tsdb.retention.size=256MB"]
-    ports: ["127.0.0.1:9090:9090"]
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
     volumes:
       - prometheus_data:/prometheus
     networks: [internal, frontend]

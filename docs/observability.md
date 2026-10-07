@@ -5,7 +5,7 @@ All Go services expose `/metrics` on their internal HTTP listener (loopback in n
 ## Signals
 
 - `http_requests_total{service,method,route,status}` and `http_request_duration_seconds`: matched routes, bounded methods/statuses; health probes and scrapes excluded.
-- `transaction_total{environment,status}` and `transaction_duration_seconds`: newly committed SUCCESS/FAILED business outcomes observed by the gateway. Idempotent replay does not increment these. Recovery completion does. HTTP 200/201 can carry a FAILED business outcome.
+- `transaction_total{environment,status,failure_class}` (`failure_class` is `none` for SUCCESS and `technical` or `business` for FAILED) and `transaction_duration_seconds`: newly committed SUCCESS/FAILED business outcomes observed by the gateway. Idempotent replay does not increment these. Recovery completion does. HTTP 200/201 can carry a FAILED business outcome.
 - `database_connection_usage` / `database_connections_max`: acquired and configured pgx pool connections per process.
 - Go/runtime and process CPU/memory collectors: process measurements, not host or Kubernetes resource measurements.
 - `event_outbox_pending`, `event_outbox_oldest_age_seconds`, `event_outbox_collection_success`: per-service durable publication backlog. Collection failures omit backlog readings.
@@ -50,7 +50,7 @@ The HTTP export test decodes actual OTLP protobuf requests received over HTTP an
 
 The incident investigation page also queries Jaeger's stable v3 HTTP API through incident-service. Compose sets `JAEGER_QUERY_URL=http://jaeger:16686`; an empty value disables server-side lookup. The search is fixed to the incident's service and short detection window, then checks a returned span's `deployment.environment.name` before projecting a small service/database graph. It deliberately omits arbitrary span tags and does not infer root cause from a slow edge. Jaeger is a local verification backend; a real Dynatrace trace/topology lookup remains separate work. See [Jaeger v3 read API](https://www.jaegertracing.io/docs/2.21/architecture/apis/).
 
-Compose includes Jaeger 2.21.0 with OTLP/HTTP ingestion on the internal network and its viewer at [localhost:16686](http://localhost:16686). The local backend retains at most 5,000 traces in memory, applies a 256 MiB memory limiter, and has a 384 MiB container limit. Traces disappear on restart; this is local investigation storage, not a production retention policy. No host OTLP port is published.
+Compose includes Jaeger 2.21.0 with OTLP/HTTP and OTLP/gRPC ingestion on the internal network and its viewer at [localhost:16686](http://localhost:16686). The gRPC receiver also accepts Jaeger's own internal telemetry. The local backend retains at most 5,000 traces in memory, applies a 256 MiB memory limiter, and has a 384 MiB container limit. Traces disappear on restart; this is local investigation storage, not a production retention policy. No host OTLP port is published.
 
 Run `WEB_PORT=3001 python3 tests/integration/traces.py` after starting the stack (use your frontend port). It creates a synthetic purchase, retrieves its durable trace ID, polls Jaeger's query API, and verifies five-service coverage, database spans, all three event-topic producer spans, the notification consumer span and parent references. It prints the actual trace viewer link. Partial exporter batches may appear briefly while spans arrive. Exporting does not gate transaction completion.
 

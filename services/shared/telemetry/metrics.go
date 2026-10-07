@@ -29,16 +29,16 @@ func New(service string, pool *pgxpool.Pool) *Metrics {
 	m := &Metrics{Registry: registry,
 		requests:         prometheus.NewCounterVec(prometheus.CounterOpts{Name: "http_requests_total", Help: "Completed HTTP requests excluding probes and scrapes."}, []string{"method", "route", "status"}),
 		duration:         prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "http_request_duration_seconds", Help: "HTTP handler duration in seconds.", Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2, 5, 10}}, []string{"method", "route"}),
-		business:         prometheus.NewCounterVec(prometheus.CounterOpts{Name: "transaction_total", Help: "Newly committed business outcomes observed by this process; excludes replays."}, []string{"environment", "status"}),
+		business:         prometheus.NewCounterVec(prometheus.CounterOpts{Name: "transaction_total", Help: "Newly committed business outcomes observed by this process; excludes replays."}, []string{"environment", "status", "failure_class"}),
 		businessDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "transaction_duration_seconds", Help: "Time from purchase creation through completion, including recovery.", Buckets: []float64{.05, .1, .25, .5, 1, 2, 5, 10, 30, 60, 300}}, []string{"environment", "status"}),
 	}
 	registerer.MustRegister(m.requests, m.duration, collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	if service == "api-gateway" {
 		registerer.MustRegister(m.business, m.businessDuration)
 		for _, env := range []string{"development", "staging"} {
-			for _, status := range []string{"SUCCESS", "FAILED"} {
-				m.business.WithLabelValues(env, status).Add(0)
-			}
+			m.business.WithLabelValues(env, "SUCCESS", "none").Add(0)
+			m.business.WithLabelValues(env, "FAILED", "technical").Add(0)
+			m.business.WithLabelValues(env, "FAILED", "business").Add(0)
 		}
 	}
 	if pool != nil {
@@ -56,11 +56,15 @@ func (m *Metrics) Handler() http.Handler {
 }
 
 // Business records only known terminal outcomes, never arbitrary input labels.
-func (m *Metrics) Business(environment, status string, seconds float64) {
-	if (environment != "development" && environment != "staging") || (status != "SUCCESS" && status != "FAILED") {
+// failureClass is "none" for SUCCESS and "technical" or "business" for FAILED.
+func (m *Metrics) Business(environment, status, failureClass string, seconds float64) {
+	if (environment != "development" && environment != "staging") ||
+		(status == "SUCCESS" && failureClass != "none") ||
+		(status == "FAILED" && failureClass != "technical" && failureClass != "business") ||
+		(status != "SUCCESS" && status != "FAILED") {
 		return
 	}
-	m.business.WithLabelValues(environment, status).Inc()
+	m.business.WithLabelValues(environment, status, failureClass).Inc()
 	m.businessDuration.WithLabelValues(environment, status).Observe(seconds)
 }
 

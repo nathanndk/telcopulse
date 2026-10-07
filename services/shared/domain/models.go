@@ -103,14 +103,17 @@ type Point struct {
 
 // Overview contains computed statistics, never demo chart constants.
 type Overview struct {
-	Total       int         `json:"total"`
-	Success     int         `json:"success"`
-	Failed      int         `json:"failed"`
-	SuccessRate float64     `json:"success_rate"`
-	P95MS       float64     `json:"p95_ms"`
-	PerMinute   int         `json:"per_minute"`
-	Series      []Point     `json:"series"`
-	PurchaseSLO PurchaseSLO `json:"purchase_slo"`
+	Total   int `json:"total"`
+	Success int `json:"success"`
+	Failed  int `json:"failed"`
+	// TechnicalFailed and BusinessDeclined partition Failed for the last hour.
+	TechnicalFailed  int         `json:"technical_failed"`
+	BusinessDeclined int         `json:"business_declined"`
+	SuccessRate      float64     `json:"success_rate"`
+	P95MS            float64     `json:"p95_ms"`
+	PerMinute        int         `json:"per_minute"`
+	Series           []Point     `json:"series"`
+	PurchaseSLO      PurchaseSLO `json:"purchase_slo"`
 }
 
 // NewID generates cryptographically random correlation identifiers.

@@ -199,8 +199,8 @@ export function Dashboard() {
               <Radio size={16} />
               {!query.data.total
                 ? "Awaiting business telemetry"
-                : query.data.failed
-                  ? "Business failures observed"
+                : query.data.technical_failed
+                  ? "Technical failures observed"
                   : "Observed purchases successful"}
             </span>
             <span>
@@ -215,7 +215,7 @@ export function Dashboard() {
                 value: query.data.total
                   ? `${query.data.success_rate.toFixed(2)}%`
                   : "—",
-                note: `${query.data.success} successful / ${query.data.total} total`,
+                note: `${query.data.success} successful / ${query.data.total} total · ${query.data.business_declined} business declines, ${query.data.technical_failed} technical failures`,
                 icon: ShieldCheck,
                 color: "success-text",
               },

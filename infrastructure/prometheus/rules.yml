@@ -4,13 +4,15 @@ groups:
       - record: telcopulse:business_success_ratio:rate5m
         expr: sum by (environment) (rate(transaction_total{status="SUCCESS"}[5m])) / sum by (environment) (rate(transaction_total[5m]))
       - record: telcopulse:business_failure_ratio:increase5m
-        expr: sum by (environment) (increase(transaction_total{status="FAILED"}[5m])) / sum by (environment) (increase(transaction_total[5m]))
+        expr: sum by (environment) (increase(transaction_total{status="FAILED",failure_class="technical"}[5m])) / sum by (environment) (increase(transaction_total[5m]))
       - record: telcopulse:business_failure_ratio:increase1h
-        expr: sum by (environment) (increase(transaction_total{status="FAILED"}[1h])) / sum by (environment) (increase(transaction_total[1h]))
+        expr: sum by (environment) (increase(transaction_total{status="FAILED",failure_class="technical"}[1h])) / sum by (environment) (increase(transaction_total[1h]))
       - record: telcopulse:business_failure_ratio:increase30m
-        expr: sum by (environment) (increase(transaction_total{status="FAILED"}[30m])) / sum by (environment) (increase(transaction_total[30m]))
+        expr: sum by (environment) (increase(transaction_total{status="FAILED",failure_class="technical"}[30m])) / sum by (environment) (increase(transaction_total[30m]))
       - record: telcopulse:business_failure_ratio:increase6h
-        expr: sum by (environment) (increase(transaction_total{status="FAILED"}[6h])) / sum by (environment) (increase(transaction_total[6h]))
+        expr: sum by (environment) (increase(transaction_total{status="FAILED",failure_class="technical"}[6h])) / sum by (environment) (increase(transaction_total[6h]))
+      - record: telcopulse:business_decline_ratio:increase1h
+        expr: sum by (environment) (increase(transaction_total{status="FAILED",failure_class="business"}[1h])) / sum by (environment) (increase(transaction_total[1h]))
       - record: telcopulse:http_p95_seconds:rate5m
         expr: histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m])))
       - alert: BusinessSuccessRateLow

@@ -25,7 +25,7 @@ Prerequisites: Docker Desktop / Docker Engine with Compose.
 docker compose up --build -d
 ```
 
-Open [TelcoPulse](http://localhost:3000). Set `WEB_PORT=3001` before the Compose command if port 3000 is already occupied. The frontend, Kafka development listener (19092), and Redis (16379) are bound to loopback. PostgreSQL and the API use an internal network. `init-env.sh` generates an ignored local database password; it never overwrites an existing `.env`.
+Open [TelcoPulse](http://localhost:3000). Set `WEB_PORT=3001` before the Compose command if port 3000 is already occupied. If port 9090 is occupied, set `PROMETHEUS_PORT=9091` and `PROMETHEUS_VIEWER_URL=http://localhost:9091` so incident evidence links use the same port. The frontend, Kafka development listener (19092), Redis (16379), and Prometheus are bound to loopback. PostgreSQL and the API use an internal network. `init-env.sh` generates an ignored local database password; it never overwrites an existing `.env`.
 
 ```sh
 docker compose logs -f api-gateway
