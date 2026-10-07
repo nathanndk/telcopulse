@@ -1,0 +1,14 @@
+# Hypothesis: killing one of two payment-service pods during steady purchases
+# causes no technical failures; in-flight workflows resume through durable
+# recovery and the second replica keeps serving.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill-payment
+  namespace: telcopulse
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces: [telcopulse]
+    labelSelectors: {app.kubernetes.io/name: payment-service}

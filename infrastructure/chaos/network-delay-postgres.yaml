@@ -1,0 +1,25 @@
+# Hypothesis: 400 ms of added latency between payment-service and PostgreSQL
+# slows purchases past the 2 s latency objective only when several round trips
+# stack up; PurchaseLatencyBudgetBurn should fire, technical failures should not.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-postgres
+  namespace: telcopulse
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces: [telcopulse]
+    labelSelectors: {app.kubernetes.io/name: payment-service}
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces: [telcopulse-deps]
+      labelSelectors: {app: postgres}
+  delay:
+    latency: 400ms
+    jitter: 50ms
+    correlation: "0"
+  duration: 3m

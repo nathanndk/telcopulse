@@ -55,6 +55,41 @@
         "reservedConnections": { "type": "integer", "minimum": 0 }
       }
     },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ingressNamespaceSelector": { "type": "object" },
+        "webClientNamespaceSelectors": { "type": "array", "items": { "type": "object" } },
+        "monitoringNamespaceSelector": { "type": "object" },
+        "egress": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespaceSelectors": { "type": "array", "items": { "type": "object" } },
+            "cidrs": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f.:]+/[0-9]+$" } }
+          }
+        }
+      }
+    },
+    "rollouts": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "services": { "type": "array", "items": { "enum": ["auth-service", "subscriber-service", "package-service", "payment-service", "notification-service", "incident-service", "simulation-service", "deployment-service", "api-gateway", "web"] } },
+        "weights": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 1, "maximum": 99 } },
+        "analysis": {
+          "type": "object",
+          "properties": {
+            "prometheusAddress": { "type": "string", "pattern": "^https?://[^/?#@]+$" },
+            "interval": { "type": "string", "pattern": "^[0-9]+[sm]$" },
+            "count": { "type": "integer", "minimum": 1 },
+            "max5xxRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+            "maxTechnicalFailureRatio": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
     "backup": {
       "type": "object",
       "properties": {

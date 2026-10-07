@@ -1,0 +1,52 @@
+# Local kind evaluation (scripts/kind-evaluation.sh). Images are side-loaded with
+# `kind load`; dependencies run in telcopulse-deps; kube-prometheus-stack runs
+# in monitoring. Not a production profile.
+image:
+  registry: localhost/telcopulse
+  tag: kind
+  pullPolicy: IfNotPresent
+runtime:
+  # No ingress in kind: the console is reached by port-forward, and the load
+  # generator sends this exact Origin.
+  webOrigin: https://telcopulse.kind.invalid
+  redisURL: redis://redis.telcopulse-deps.svc:6379/0
+  kafkaBrokers: kafka.telcopulse-deps.svc:9092
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring:9090
+  prometheusSource: kind-alertmanager
+  prometheusEnvironment: development
+  purchasesPerMinute: "6000"
+ingress:
+  enabled: false
+bootstrap:
+  enabled: true
+alerting:
+  ingestion: alertmanager
+monitoring:
+  serviceMonitor: {enabled: true}
+  prometheusRule: {enabled: true}
+  alertmanagerConfig: {enabled: true}
+pdb:
+  enabled: true
+services:
+  api-gateway: {replicas: 2}
+  payment-service: {replicas: 2}
+  web: {replicas: 2}
+networkPolicy:
+  enabled: true
+  webClientNamespaceSelectors:
+    - matchLabels: {kubernetes.io/metadata.name: telcopulse-load}
+  egress:
+    enabled: true
+    namespaceSelectors:
+      - matchLabels: {kubernetes.io/metadata.name: telcopulse-deps}
+      - matchLabels: {kubernetes.io/metadata.name: monitoring}
+rollouts:
+  enabled: true
+  services: [api-gateway]
+  weights: [50]
+backup:
+  enabled: true
+  size: 1Gi
+# 3 gateway pods during a canary x 6 + 9 service pods x 8 + 10 reserved = 100.
+capacity:
+  gatewayDatabaseMaxConns: 6

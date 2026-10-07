@@ -89,6 +89,13 @@ if tar -C "$chart_root" -cf - telcopulse | docker run --rm -i --entrypoint sh "$
   echo 'expected Helm to reject a connection budget above max_connections' >&2
   exit 1
 fi
+tar -C "$chart_root" -cf - telcopulse | docker run --rm -i --entrypoint sh "$helm_image" -c \
+  'mkdir /chart && tar -xf - -C /chart && helm template telcopulse /chart/telcopulse --namespace telcopulse -f /chart/telcopulse/values-kind.yaml' \
+  > "$render_dir/kind.yaml"
+printf 'kind: '
+docker run --rm -i "$schema_image" -summary -strict -kubernetes-version 1.34.0 -schema-location default -schema-location "$crd_schemas" \
+  < "$render_dir/kind.yaml"
+
 for example in namespace.example.yaml runtime-secret.example.yaml; do
   printf '%s: ' "$example"
   docker run --rm -i "$schema_image" -summary -strict -kubernetes-version 1.34.0 \

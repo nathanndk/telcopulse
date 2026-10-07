@@ -7,7 +7,8 @@ metadata:
     app.kubernetes.io/name: {{ $name }}
     app.kubernetes.io/part-of: telcopulse
 spec:
-  {{- if not (and $.Values.autoscaling.enabled (or (eq $name "api-gateway") (eq $name "web"))) }}
+  {{- $rollout := and $.Values.rollouts.enabled (has $name $.Values.rollouts.services) }}
+  {{- if not (or $rollout (and $.Values.autoscaling.enabled (or (eq $name "api-gateway") (eq $name "web")))) }}
   replicas: {{ $service.replicas }}
   {{- end }}
   revisionHistoryLimit: 5

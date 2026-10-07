@@ -1,0 +1,21 @@
+# Hypothesis: partitioning notification-service from Kafka does not affect
+# purchase success (outboxes absorb events); notification freshness degrades and
+# recovers with no lost or duplicated receipts once the partition heals.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: partition-kafka
+  namespace: telcopulse
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces: [telcopulse]
+    labelSelectors: {app.kubernetes.io/name: notification-service}
+  direction: both
+  target:
+    mode: all
+    selector:
+      namespaces: [telcopulse-deps]
+      labelSelectors: {app: kafka}
+  duration: 2m

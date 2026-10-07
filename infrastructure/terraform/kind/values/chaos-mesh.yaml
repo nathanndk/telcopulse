@@ -1,0 +1,11 @@
+# kind nodes run containerd.
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/containerd/containerd.sock
+dashboard:
+  create: false
+controllerManager:
+  replicaCount: 1
+  leaderElection: {enabled: false}
+dnsServer:
+  create: false

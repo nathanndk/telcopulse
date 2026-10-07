@@ -145,6 +145,35 @@ backup:
   storageClassName: ""
   image: postgres:17-alpine
 
+# NetworkPolicies (requires a CNI that enforces them). Selectors are label
+# selectors for the namespaces of the ingress controller and Prometheus.
+networkPolicy:
+  enabled: false
+  ingressNamespaceSelector:
+    matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+  # Extra namespaces allowed to call the web console, such as a load generator.
+  webClientNamespaceSelectors: []
+  monitoringNamespaceSelector:
+    matchLabels: {kubernetes.io/metadata.name: monitoring}
+  egress:
+    enabled: false
+    # Namespaces hosting PostgreSQL, Redis, Kafka and the OTLP collector.
+    namespaceSelectors: []
+    # External endpoints (managed databases, vendor APIs) as CIDR blocks.
+    cidrs: []
+
+# Argo Rollouts canary with Prometheus analysis for the listed services.
+rollouts:
+  enabled: false
+  services: [api-gateway]
+  weights: [50]
+  analysis:
+    prometheusAddress: http://kube-prometheus-stack-prometheus.monitoring:9090
+    interval: 30s
+    count: 4
+    max5xxRatio: 0.05
+    maxTechnicalFailureRatio: 0.05
+
 # Capacity guardrails from docs/capacity.md. The chart refuses to render when the
 # largest gateway replica count times its pool, plus 8 connections per other Go
 # service pod and the reserve, exceeds the database's max_connections.

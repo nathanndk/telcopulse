@@ -1,0 +1,160 @@
+# Evaluation-only PostgreSQL, Redis and Kafka for the kind cluster. Single
+# replicas on node-local storage; scripts/kind-evaluation.sh creates the
+# postgres-credentials Secret. Do not use these manifests for real data.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: telcopulse-deps
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: postgres, namespace: telcopulse-deps}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: {matchLabels: {app: postgres}}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          env:
+            - {name: POSTGRES_USER, value: telcopulse}
+            - {name: POSTGRES_DB, value: telcopulse}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: postgres-credentials, key: password}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports: [{containerPort: 5432, name: postgres}]
+          readinessProbe:
+            exec: {command: [pg_isready, -U, telcopulse, -d, telcopulse]}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: run, mountPath: /var/run/postgresql}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: run, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: telcopulse-deps}
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: postgres}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: redis, namespace: telcopulse-deps}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: redis}}
+  template:
+    metadata: {labels: {app: redis}}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: redis
+          image: redis:8.2-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          args: [redis-server, --save, "", --appendonly, "no", --maxmemory, 64mb, --maxmemory-policy, noeviction]
+          ports: [{containerPort: 6379, name: redis}]
+          readinessProbe:
+            exec: {command: [redis-cli, ping]}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          volumeMounts: [{name: data, mountPath: /data}]
+      volumes:
+        - {name: data, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redis, namespace: telcopulse-deps}
+spec:
+  selector: {app: redis}
+  ports: [{port: 6379, targetPort: redis}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: kafka, namespace: telcopulse-deps}
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector: {matchLabels: {app: kafka}}
+  template:
+    metadata: {labels: {app: kafka}}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: kafka
+          image: apache/kafka:4.1.1
+          # The image's entrypoint renders server.properties under /opt/kafka at start.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: false
+          env:
+            - {name: KAFKA_NODE_ID, value: "1"}
+            - {name: KAFKA_PROCESS_ROLES, value: "broker,controller"}
+            - {name: KAFKA_LISTENERS, value: "PLAINTEXT://:9092,CONTROLLER://:9093"}
+            - {name: KAFKA_ADVERTISED_LISTENERS, value: "PLAINTEXT://kafka.telcopulse-deps.svc:9092"}
+            - {name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"}
+            - {name: KAFKA_INTER_BROKER_LISTENER_NAME, value: PLAINTEXT}
+            - {name: KAFKA_CONTROLLER_LISTENER_NAMES, value: CONTROLLER}
+            - {name: KAFKA_CONTROLLER_QUORUM_VOTERS, value: "1@localhost:9093"}
+            - {name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1"}
+            - {name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0"}
+            - {name: KAFKA_NUM_PARTITIONS, value: "3"}
+            - {name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "true"}
+            - {name: KAFKA_LOG_RETENTION_HOURS, value: "24"}
+            - {name: KAFKA_HEAP_OPTS, value: "-Xms192m -Xmx384m"}
+          ports: [{containerPort: 9092, name: kafka}]
+          readinessProbe:
+            tcpSocket: {port: kafka}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 384Mi}
+            limits: {memory: 768Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kafka, namespace: telcopulse-deps}
+spec:
+  selector: {app: kafka}
+  ports: [{port: 9092, targetPort: kafka}]

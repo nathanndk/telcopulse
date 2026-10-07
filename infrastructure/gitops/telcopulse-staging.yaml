@@ -1,0 +1,30 @@
+# Staging on a real cluster: tracks the protected default branch. The image tag
+# in values-staging.yaml is changed by a reviewed merge request after the GitLab
+# pipeline publishes all ten images; Argo CD then syncs and Argo Rollouts runs
+# the analysed canary. Requires the namespace, runtime Secret and TLS Secret
+# described in docs/kubernetes.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: telcopulse-staging
+  namespace: argocd
+spec:
+  project: telcopulse
+  source:
+    repoURL: https://github.com/nathanndk/telcopulse.git
+    targetRevision: main
+    path: infrastructure/helm/telcopulse
+    helm:
+      valueFiles: [values-staging.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: telcopulse-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions: [ServerSideApply=true]
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]

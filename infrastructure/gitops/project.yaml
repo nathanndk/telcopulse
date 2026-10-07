@@ -1,0 +1,27 @@
+# Argo CD project limiting TelcoPulse applications to their own namespaces and
+# to the resource kinds the chart renders.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: telcopulse
+  namespace: argocd
+spec:
+  description: TelcoPulse evaluation environments
+  sourceRepos:
+    - https://github.com/nathanndk/telcopulse.git
+    - git://telcopulse-git/repo
+  destinations:
+    - {server: https://kubernetes.default.svc, namespace: telcopulse}
+    - {server: https://kubernetes.default.svc, namespace: telcopulse-dev}
+    - {server: https://kubernetes.default.svc, namespace: telcopulse-staging}
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - {group: "", kind: "*"}
+    - {group: apps, kind: Deployment}
+    - {group: batch, kind: "*"}
+    - {group: policy, kind: PodDisruptionBudget}
+    - {group: autoscaling, kind: HorizontalPodAutoscaler}
+    - {group: networking.k8s.io, kind: "*"}
+    - {group: monitoring.coreos.com, kind: "*"}
+    - {group: argoproj.io, kind: Rollout}
+    - {group: argoproj.io, kind: AnalysisTemplate}

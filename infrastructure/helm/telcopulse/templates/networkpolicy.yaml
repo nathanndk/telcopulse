@@ -1,0 +1,95 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $instance := .Release.Name }}
+# Default deny for every TelcoPulse pod, then only the call graph the services use:
+# clients -> web -> api-gateway -> domain services, plus the three sibling calls
+# (payment/notification -> simulation, simulation -> deployment), metrics scraping
+# and the Alertmanager webhook from the monitoring namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telcopulse-default-deny
+  labels: {app.kubernetes.io/part-of: telcopulse}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: telcopulse}
+  policyTypes: [Ingress{{ if $np.egress.enabled }}, Egress{{ end }}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-from-clients
+  labels: {app.kubernetes.io/part-of: telcopulse}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: web, app.kubernetes.io/instance: {{ $instance }}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+{{ toYaml $np.ingressNamespaceSelector | indent 12 }}
+        {{- range $np.webClientNamespaceSelectors }}
+        - namespaceSelector:
+{{ toYaml . | indent 12 }}
+        {{- end }}
+      ports: [{port: 3000, protocol: TCP}]
+---
+{{- $callers := dict "api-gateway" (list "web") "auth-service" (list "api-gateway") "subscriber-service" (list "api-gateway") "package-service" (list "api-gateway") "payment-service" (list "api-gateway") "notification-service" (list "api-gateway") "incident-service" (list "api-gateway") "simulation-service" (list "api-gateway" "payment-service" "notification-service") "deployment-service" (list "api-gateway" "simulation-service") }}
+{{- range $service := keys $callers | sortAlpha }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $service }}-from-callers
+  labels: {app.kubernetes.io/part-of: telcopulse}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: {{ $service }}, app.kubernetes.io/instance: {{ $instance }}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range $caller := get $callers $service }}
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: {{ $caller }}, app.kubernetes.io/instance: {{ $instance }}}
+        {{- end }}
+      ports: [{port: 8080, protocol: TCP}]
+    # Prometheus scrapes /metrics on the same port; the API still needs SERVICE_TOKEN.
+    - from:
+        - namespaceSelector:
+{{ toYaml $np.monitoringNamespaceSelector | indent 12 }}
+      ports:
+        - {port: 8080, protocol: TCP}
+        {{- if and (eq $service "incident-service") (eq $.Values.alerting.ingestion "alertmanager") }}
+        - {port: 9094, protocol: TCP}
+        {{- end }}
+---
+{{- end }}
+{{- if $np.egress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telcopulse-egress
+  labels: {app.kubernetes.io/part-of: telcopulse}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: telcopulse}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: telcopulse}}
+      ports: [{port: 8080, protocol: TCP}, {port: 9094, protocol: TCP}]
+    {{- range $np.egress.namespaceSelectors }}
+    - to:
+        - namespaceSelector:
+{{ toYaml . | indent 12 }}
+    {{- end }}
+    {{- range $np.egress.cidrs }}
+    - to:
+        - ipBlock: {cidr: {{ . }}}
+    {{- end }}
+---
+{{- end }}
+{{- end }}

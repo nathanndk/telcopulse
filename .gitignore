@@ -13,3 +13,8 @@ bin/
 .DS_Store
 __pycache__/
 *.pyc
+
+# OpenTofu working state (the provider lock file is committed)
+.terraform/
+*.tfstate
+*.tfstate.*

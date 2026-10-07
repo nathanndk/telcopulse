@@ -30,9 +30,14 @@ expected_incident = expected_global.merge(
   'datadog-token' => 'DATADOG_TOKEN'
 )
 
+# Only Secret volumes carry credentials; the web pod's emptyDir cache is expected.
+def secret_volumes(pod)
+  (pod['volumes'] || []).select { |volume| volume.key?('secret') }
+end
+
 plain_deployments.each do |name, deployment|
   pod = deployment.fetch('spec').fetch('template').fetch('spec')
-  abort "default #{name} mounts a vendor credential" if pod.key?('volumes') || pod.fetch('containers').first.key?('volumeMounts')
+  abort "default #{name} mounts a vendor credential" unless secret_volumes(pod).empty?
   config = plain_configs.fetch("#{name}-config").fetch('data')
   abort "default #{name} has vendor settings" if config.keys.any? { |key| key.start_with?('SPLUNK_', 'DATADOG_', 'JAEGER_') || key == 'OTEL_EXPORTER_OTLP_AUTHORIZATION_FILE' || key == 'OTEL_EXPORTER_OTLP_CERTIFICATE' }
 end
@@ -41,8 +46,8 @@ vendor_deployments.each do |name, deployment|
   pod = deployment.fetch('spec').fetch('template').fetch('spec')
   container = pod.fetch('containers').first
   expected = name == 'web' ? {} : name == 'incident-service' ? expected_incident : expected_global
-  volumes = (pod['volumes'] || []).to_h { |v| [v.fetch('name'), v] }
-  mounts = (container['volumeMounts'] || []).to_h { |v| [v.fetch('name'), v] }
+  volumes = secret_volumes(pod).to_h { |v| [v.fetch('name'), v] }
+  mounts = (container['volumeMounts'] || []).select { |v| volumes.key?(v.fetch('name')) || !%w[next-cache tmp].include?(v.fetch('name')) }.to_h { |v| [v.fetch('name'), v] }
   abort "#{name} Secret volume scope incorrect" unless volumes.keys.sort == expected.keys.sort && mounts.keys.sort == expected.keys.sort
   expected.each do |volume_name, key|
     secret = volumes.fetch(volume_name).fetch('secret')

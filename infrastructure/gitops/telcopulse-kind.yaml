@@ -1,0 +1,30 @@
+# The kind evaluation release, reconciled from Git. scripts/kind-evaluation.sh
+# serves this checkout through git-daemon on the kind Docker network, so the
+# branch under test is used without pushing it. Promotion means committing a
+# new image tag or values change; rollback means reverting that commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: telcopulse-kind
+  namespace: argocd
+spec:
+  project: telcopulse
+  source:
+    repoURL: git://telcopulse-git/repo
+    targetRevision: HEAD
+    path: infrastructure/helm/telcopulse
+    helm:
+      valueFiles: [values-kind.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: telcopulse
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions: [CreateNamespace=false, ServerSideApply=true]
+  # Argo Rollouts owns the replica count of Deployments it references.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]

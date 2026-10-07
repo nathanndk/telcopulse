@@ -13,6 +13,8 @@ metadata:
     {{- end }}
 spec:
   jobLabel: telcopulse.io/scrape-job
+  # Lets canary analysis select the new revision's pods.
+  podTargetLabels: [rollouts-pod-template-hash]
   selector:
     matchLabels:
       app.kubernetes.io/part-of: telcopulse

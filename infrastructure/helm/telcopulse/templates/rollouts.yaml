@@ -1,0 +1,92 @@
+{{- if .Values.rollouts.enabled }}
+{{- $r := .Values.rollouts }}
+# Argo Rollouts takes over the selected Deployments through workloadRef and
+# replaces their rolling update with a canary that pauses for Prometheus
+# analysis of the canary pods; a failed analysis aborts and scales the canary
+# away. Requires the Argo Rollouts controller and ServiceMonitor scraping (the
+# rollouts-pod-template-hash pod label becomes a target label).
+{{- range $name := $r.services }}
+{{- $service := get $.Values.services $name }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/part-of: telcopulse
+spec:
+  replicas: {{ $service.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+    scaleDown: onsuccess
+  strategy:
+    canary:
+      maxSurge: 1
+      maxUnavailable: 0
+      steps:
+        {{- range $weight := $r.weights }}
+        - setWeight: {{ $weight }}
+        - analysis:
+            templates: [{templateName: telcopulse-canary}]
+            args:
+              - {name: service, value: {{ $name }}}
+              - name: canary-hash
+                valueFrom: {podTemplateHashValue: Latest}
+        {{- end }}
+---
+{{- end }}
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: telcopulse-canary
+  labels: {app.kubernetes.io/part-of: telcopulse}
+spec:
+  args:
+    - name: service
+    - name: canary-hash
+  metrics:
+    # An empty or NaN result means the canary served no requests in the window.
+    - name: canary-http-5xx-ratio
+      interval: {{ $r.analysis.interval }}
+      count: {{ $r.analysis.count }}
+      failureLimit: 1
+      successCondition: "len(result) == 0 || isNaN(result[0]) || result[0] <= {{ $r.analysis.max5xxRatio }}"
+      provider:
+        prometheus:
+          address: {{ $r.analysis.prometheusAddress }}
+          query: |
+            sum(rate(http_requests_total{job="telcopulse",namespace="{{ $.Release.Namespace }}",service="{{ "{{" }}args.service{{ "}}" }}",rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}",status=~"5.."}[1m]))
+            /
+            sum(rate(http_requests_total{job="telcopulse",namespace="{{ $.Release.Namespace }}",service="{{ "{{" }}args.service{{ "}}" }}",rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}"}[1m]))
+    - name: canary-purchase-technical-failure-ratio
+      interval: {{ $r.analysis.interval }}
+      count: {{ $r.analysis.count }}
+      failureLimit: 1
+      successCondition: "len(result) == 0 || isNaN(result[0]) || result[0] <= {{ $r.analysis.maxTechnicalFailureRatio }}"
+      provider:
+        prometheus:
+          address: {{ $r.analysis.prometheusAddress }}
+          query: |
+            sum(rate(transaction_total{namespace="{{ $.Release.Namespace }}",status="FAILED",failure_class="technical",rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}"}[1m]))
+            /
+            sum(rate(transaction_total{namespace="{{ $.Release.Namespace }}",rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}"}[1m]))
+    # Never promote while the service-level budget is already burning.
+    - name: slo-burn-alerts
+      interval: {{ $r.analysis.interval }}
+      count: {{ $r.analysis.count }}
+      failureLimit: 1
+      successCondition: "result[0] == 0"
+      provider:
+        prometheus:
+          address: {{ $r.analysis.prometheusAddress }}
+          query: |
+            sum(ALERTS{alertstate="firing",alertname=~"BusinessSuccessRateLow|PurchaseLatencyBudgetBurn|NotificationFreshnessBudgetBurn"}) or vector(0)
+---
+{{- end }}
