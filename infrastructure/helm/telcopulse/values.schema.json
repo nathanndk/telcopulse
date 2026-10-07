@@ -46,6 +46,17 @@
         "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
       }
     },
+    "backup": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "schedule": { "type": "string", "minLength": 9 },
+        "retain": { "type": "integer", "minimum": 1 },
+        "size": { "type": "string", "pattern": "^[0-9]+(Mi|Gi|Ti)$" },
+        "storageClassName": { "type": "string" },
+        "image": { "type": "string", "minLength": 1 }
+      }
+    },
     "alerting": {
       "type": "object",
       "required": ["ingestion", "webhookTokenKey"],

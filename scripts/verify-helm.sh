@@ -60,13 +60,14 @@ docker run --rm -i "$schema_image" -summary -strict -kubernetes-version 1.34.0 \
   < "$render_dir/bootstrap.yaml"
 
 tar -C "$chart_root" -cf - telcopulse | docker run --rm -i --entrypoint sh "$helm_image" -c \
-  'mkdir /chart && tar -xf - -C /chart && helm template telcopulse /chart/telcopulse --namespace telcopulse-dev -f /chart/telcopulse/values-dev.yaml --set alerting.ingestion=alertmanager --set monitoring.serviceMonitor.enabled=true --set monitoring.prometheusRule.enabled=true --set monitoring.alertmanagerConfig.enabled=true --set monitoring.alertmanagerConfig.telegram.enabled=true --set monitoring.alertmanagerConfig.telegram.chatID=-1001234567890' \
+  'mkdir /chart && tar -xf - -C /chart && helm template telcopulse /chart/telcopulse --namespace telcopulse-dev -f /chart/telcopulse/values-dev.yaml --set alerting.ingestion=alertmanager --set monitoring.serviceMonitor.enabled=true --set monitoring.prometheusRule.enabled=true --set monitoring.alertmanagerConfig.enabled=true --set monitoring.alertmanagerConfig.telegram.enabled=true --set monitoring.alertmanagerConfig.telegram.chatID=-1001234567890 --set backup.enabled=true' \
   > "$render_dir/monitoring.yaml"
 printf 'monitoring: '
 docker run --rm -i "$schema_image" -summary -strict -kubernetes-version 1.34.0 -schema-location default -schema-location "$crd_schemas" \
   < "$render_dir/monitoring.yaml"
 grep -q 'alert: PurchaseLatencyBudgetBurn' "$render_dir/monitoring.yaml" || { echo 'PrometheusRule is missing SLO alerts' >&2; exit 1; }
 grep -q 'record: slo:sli_error:ratio_rate5m' "$render_dir/monitoring.yaml" || { echo 'PrometheusRule is missing Sloth recordings' >&2; exit 1; }
+grep -q 'kind: CronJob' "$render_dir/monitoring.yaml" || { echo 'backup CronJob missing' >&2; exit 1; }
 if grep -q 'alert: PostgresDown' "$render_dir/monitoring.yaml"; then echo 'dependency rules rendered without exporters' >&2; exit 1; fi
 
 for invalid in \

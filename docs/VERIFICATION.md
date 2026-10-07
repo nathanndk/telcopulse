@@ -1,5 +1,12 @@
 # Verification record
 
+## Backups, restore drill and database-loss game day · 2026-10-07
+
+- `postgres-backup` writes hourly snapshot-consistent dumps with SHA-256 and row-count manifests (first run: 176,728 bytes, 34 tables, 1 s). node-exporter's textfile collector exposes its metrics to Prometheus. `promtool test rules` covers the stale, failing and missing backup alerts.
+- `scripts/restore-drill.sh`: checksum, 34-table/1,005-row manifest comparison and current migrations passed on a scratch server; restore 331 ms, 16.5 s total. A first run printed nonsense timings because this workstation's uutils `date` ignores `%3N`; the timer now divides `%s%N`.
+- `tests/integration/database_loss.py`: dropping the live database fired `PostgresDown` after 36.5 s. `scripts/restore-database.sh` restored backup `telcopulse-20261007T152031Z.dump` in 366 ms with a 47.5 s write outage (97.9 s from loss to recovery). The pre-backup purchase `TXN-78211acb0453e5c65260fd78` was present, the post-backup purchase `TXN-fe25c947366716d286663421` was gone, and a new purchase succeeded. The first attempt was interrupted when the WSL VM rebooted; after restart the database was intact and the rerun passed.
+- `scripts/verify-helm.sh` validates the optional backup CronJob, PVC and kube-state-metrics backup rule. Off-host copies and WAL-based point-in-time recovery are not implemented.
+
 ## Infrastructure exporters, synthetic probes, logs and Kubernetes monitoring resources · 2026-10-07
 
 - Compose now runs postgres, redis, kafka, node and blackbox exporters, Loki 3.7.8 and Alloy 1.20.1. All 17 non-application scrape targets and all nine probes reported up. `promtool test rules` covers PostgresDown, KafkaBrokerUnavailable, probe failure and the 24-hour disk-fill prediction. A first fixture failed because 15-minute samples exceed Prometheus' five-minute lookback; it now uses 5-minute samples.

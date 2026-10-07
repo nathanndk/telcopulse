@@ -12,6 +12,7 @@ Use the [ITOC Overview](/) and [Incidents](/incidents) in the local console, the
 6. [OOMKilled](oomkilled.md)
 7. [Dependency timeout](dependency-timeout.md)
 8. [Bad deployment](bad-deployment.md)
+9. [Database loss or corruption](database-loss.md)
 
 For each response: acknowledge and assign the incident, establish impact with measured outcomes, capture time-aligned metrics/logs/traces and related deployments, document the suspected root cause and mitigation, then verify fresh transactions and relevant queues before resolution. After a SEV-1/2 resolution, generate the structured postmortem and assign corrective actions. The [incident contract](../incidents.md), [simulation guide](../simulations.md) and [observability guide](../observability.md) define the actual local behavior and limitations.
 

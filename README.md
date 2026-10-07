@@ -94,7 +94,7 @@ Next.js contains presentation and a same-origin reverse proxy, not purchase busi
 
 See [architecture](docs/architecture.md), [API contract](docs/api.md), and [verification record](docs/VERIFICATION.md).
 
-For incident response, start with the [runbook index](docs/runbooks/README.md). It covers high error rate, high latency, database connection exhaustion, Kafka lag, CrashLoopBackOff, OOMKilled, dependency timeout and bad deployment with evidence, mitigation and recovery checks.
+For incident response, start with the [runbook index](docs/runbooks/README.md). It covers high error rate, high latency, database connection exhaustion, Kafka lag, CrashLoopBackOff, OOMKilled, dependency timeout, bad deployment and database loss with evidence, mitigation and recovery checks. Hourly verified PostgreSQL backups, a restore drill and a measured database-loss game day are described in [disaster recovery](docs/disaster-recovery.md).
 
 ## Verify asynchronous recovery
 

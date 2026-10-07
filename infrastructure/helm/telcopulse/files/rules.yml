@@ -214,4 +214,28 @@ groups:
         annotations:
           runbook_url: docs/observability.md#infrastructure-signals
           summary: "{{ $labels.job }} metrics target is down; its alerts cannot fire"
+  # Backups publish textfile metrics through node-exporter; see docs/disaster-recovery.md.
+  - name: backups
+    rules:
+      - alert: DatabaseBackupStale
+        expr: time() - max(telcopulse_backup_last_success_timestamp_seconds) > 2.5 * 3600
+        for: 5m
+        labels: {severity: SEV-2, dependency: postgres}
+        annotations:
+          runbook_url: docs/runbooks/database-loss.md
+          summary: "No verified PostgreSQL backup for more than 2.5 hours; the 1-hour RPO is at risk"
+          description: "Check the postgres-backup container logs and the backup volume's free space."
+      - alert: DatabaseBackupFailing
+        expr: increase(telcopulse_backup_failures_total[2h]) > 0
+        labels: {severity: SEV-3, dependency: postgres}
+        annotations:
+          runbook_url: docs/runbooks/database-loss.md
+          summary: "A scheduled PostgreSQL backup attempt failed"
+      - alert: DatabaseBackupMetricsMissing
+        expr: absent(telcopulse_backup_last_attempt_timestamp_seconds)
+        for: 2h
+        labels: {severity: SEV-3, dependency: postgres}
+        annotations:
+          runbook_url: docs/runbooks/database-loss.md
+          summary: "No backup job has reported for two hours; backups may not be running at all"
 

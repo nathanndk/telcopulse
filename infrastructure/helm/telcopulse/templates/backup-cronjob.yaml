@@ -1,0 +1,113 @@
+{{- if .Values.backup.enabled }}
+# Hourly logical backup to a PersistentVolumeClaim, mirroring the Compose job:
+# custom-format pg_dump plus SHA-256, keeping the newest backup.retain sets.
+# Copy the volume off-cluster for real disaster recovery; see docs/disaster-recovery.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: telcopulse-postgres-backups
+  labels:
+    app.kubernetes.io/part-of: telcopulse
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.backup.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.size }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: telcopulse-postgres-backup
+  labels:
+    app.kubernetes.io/name: postgres-backup
+    app.kubernetes.io/part-of: telcopulse
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: postgres-backup
+            app.kubernetes.io/part-of: telcopulse
+        spec:
+          restartPolicy: Never
+          serviceAccountName: telcopulse-app
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: {{ .Values.backup.image | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                readOnlyRootFilesystem: true
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.existingSecret }}
+                      key: DATABASE_URL
+                - name: RETAIN
+                  value: {{ .Values.backup.retain | quote }}
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+                  base=/backups/telcopulse-$stamp
+                  pg_dump --format=custom --compress=6 --file="$base.dump.partial" "$DATABASE_URL"
+                  mv "$base.dump.partial" "$base.dump"
+                  (cd /backups && sha256sum "telcopulse-$stamp.dump" > "telcopulse-$stamp.dump.sha256")
+                  ls -1t /backups/telcopulse-*.dump | tail -n +$((RETAIN + 1)) | while read -r old; do rm -f "$old" "$old.sha256"; done
+                  echo "backup $base.dump $(stat -c %s "$base.dump") bytes"
+              resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {cpu: 500m, memory: 256Mi}
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: telcopulse-postgres-backups
+---
+{{- if .Values.monitoring.prometheusRule.enabled }}
+# kube-state-metrics reports CronJob outcomes; alert when no backup succeeded.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: telcopulse-backup
+  labels:
+    app.kubernetes.io/part-of: telcopulse
+    {{- with .Values.monitoring.prometheusRule.labels }}
+{{ toYaml . | indent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: telcopulse-backups
+      rules:
+        - alert: DatabaseBackupStale
+          expr: time() - max by (namespace) (kube_cronjob_status_last_successful_time{namespace="{{ .Release.Namespace }}",cronjob="telcopulse-postgres-backup"}) > 2.5 * 3600
+          for: 5m
+          labels: {severity: SEV-2, dependency: postgres}
+          annotations:
+            runbook_url: docs/runbooks/database-loss.md
+            summary: "No successful PostgreSQL backup Job for more than 2.5 hours in {{ .Release.Namespace }}"
+---
+{{- end }}
+{{- end }}

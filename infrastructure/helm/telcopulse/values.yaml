@@ -135,3 +135,12 @@ monitoring:
       botTokenKey: TELEGRAM_BOT_TOKEN
       # Numeric chat ID (not a secret), for example -1001234567890.
       chatID: 0
+
+# Optional hourly pg_dump CronJob writing to a PVC (see docs/disaster-recovery.md).
+backup:
+  enabled: false
+  schedule: "0 * * * *"
+  retain: 48
+  size: 2Gi
+  storageClassName: ""
+  image: postgres:17-alpine

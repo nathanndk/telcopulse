@@ -441,3 +441,36 @@ tests:
             exp_annotations:
               runbook_url: docs/runbooks/database-loss.md
               summary: Root filesystem is below 20% free and will fill within a day at the current rate
+
+  - name: backup-stale
+    interval: 5m
+    input_series:
+      - series: 'telcopulse_backup_last_success_timestamp_seconds{job="node"}'
+        values: '0x60'
+      - series: 'telcopulse_backup_last_attempt_timestamp_seconds{job="node"}'
+        values: '0+300x60'
+      - series: 'telcopulse_backup_failures_total{job="node"}'
+        values: '0x30 1+0x30'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: DatabaseBackupStale
+        exp_alerts: []
+      - eval_time: 3h
+        alertname: DatabaseBackupStale
+        exp_alerts:
+          - exp_labels: {severity: SEV-2, dependency: postgres}
+            exp_annotations:
+              runbook_url: docs/runbooks/database-loss.md
+              summary: "No verified PostgreSQL backup for more than 2.5 hours; the 1-hour RPO is at risk"
+              description: "Check the postgres-backup container logs and the backup volume's free space."
+      - eval_time: 3h
+        alertname: DatabaseBackupFailing
+        exp_alerts:
+          - exp_labels: {severity: SEV-3, dependency: postgres, job: node}
+            exp_annotations:
+              runbook_url: docs/runbooks/database-loss.md
+              summary: "A scheduled PostgreSQL backup attempt failed"
+      - eval_time: 3h
+        alertname: DatabaseBackupMetricsMissing
+        exp_alerts: []
+
