@@ -297,6 +297,61 @@ services:
       timeout: 3s
       retries: 20
     networks: [internal, frontend]
+  # Infrastructure signals. Exporters stay on the internal network; only
+  # Prometheus scrapes them. See docs/observability.md#infrastructure-signals.
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_URI: postgres:5432/telcopulse?sslmode=disable
+      DATA_SOURCE_USER: telcopulse
+      DATA_SOURCE_PASS_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: unless-stopped
+    networks: [internal]
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.93.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    restart: unless-stopped
+    networks: [internal]
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.10.0
+    command: ["--kafka.server=kafka:9092", "--kafka.version=3.9.0", "--refresh.metadata=30s"]
+    depends_on:
+      kafka: {condition: service_healthy}
+    restart: unless-stopped
+    networks: [internal]
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    command: ["--path.rootfs=/host", "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker|home/.+/\\.local/share/docker)($$|/)", "--collector.textfile.directory=/textfile"]
+    volumes:
+      - /:/host:ro
+      - backup_metrics:/textfile:ro
+    restart: unless-stopped
+    networks: [internal]
+  blackbox-exporter:
+    build: ./infrastructure/blackbox
+    restart: unless-stopped
+    networks: [internal]
+  loki:
+    build: ./infrastructure/loki
+    volumes:
+      - loki_data:/loki
+    mem_limit: 384m
+    restart: unless-stopped
+    networks: [internal]
+  alloy:
+    build: ./infrastructure/alloy
+    # Read access to the Docker API is root-equivalent on the host; this local
+    # collector only discovers and tails containers of the telcopulse project.
+    volumes:
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on: [loki]
+    restart: unless-stopped
+    networks: [internal]
   grafana:
     build: ./infrastructure/grafana
     environment:
@@ -329,10 +384,15 @@ services:
 secrets:
   alert_webhook_token:
     environment: ALERT_WEBHOOK_TOKEN
+  postgres_password:
+    environment: POSTGRES_PASSWORD
 volumes:
   postgres_data:
   prometheus_data:
   alertmanager_data:
+  loki_data:
+  alloy_data:
+  backup_metrics:
   grafana_data:
   kafka_data:
 networks:

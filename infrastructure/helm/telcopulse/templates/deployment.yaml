@@ -52,10 +52,15 @@ spec:
           ports:
             - name: http
               containerPort: {{ if eq $name "web" }}3000{{ else }}8080{{ end }}
+            {{- if and (eq $name "incident-service") (eq $.Values.alerting.ingestion "alertmanager") }}
+            - name: alert-webhook
+              containerPort: 9094
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ $name }}-config
-          {{- if $service.secretKeys }}
+          {{- $webhook := and (eq $name "incident-service") (eq $.Values.alerting.ingestion "alertmanager") }}
+          {{- if or $service.secretKeys $webhook }}
           env:
             {{- range $key := $service.secretKeys }}
             - name: {{ $key }}
@@ -63,6 +68,13 @@ spec:
                 secretKeyRef:
                   name: {{ $.Values.existingSecret }}
                   key: {{ $key }}
+            {{- end }}
+            {{- if $webhook }}
+            - name: ALERT_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.existingSecret }}
+                  key: {{ $.Values.alerting.webhookTokenKey }}
             {{- end }}
           {{- end }}
           {{- if ne $name "web" }}

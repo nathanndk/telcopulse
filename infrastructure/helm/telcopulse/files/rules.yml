@@ -1,0 +1,217 @@
+groups:
+  - name: telcopulse
+    rules:
+      - record: telcopulse:business_success_ratio:rate5m
+        expr: sum by (environment) (rate(transaction_total{status="SUCCESS"}[5m])) / sum by (environment) (rate(transaction_total[5m]))
+      - record: telcopulse:business_decline_ratio:increase1h
+        expr: sum by (environment) (increase(transaction_total{status="FAILED",failure_class="business"}[1h])) / sum by (environment) (increase(transaction_total[1h]))
+      - record: telcopulse:http_p95_seconds:rate5m
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m])))
+      # Burn-rate alerts read the Sloth-generated SLI recordings in slo-rules.yml.
+      # 14.4x and 6x of each budget, with short-window traffic floors; see docs/slo.md.
+      - alert: BusinessSuccessRateLow
+        expr: |
+          (
+            sum by (environment) (slo:sli_error:ratio_rate5m{sloth_slo="purchase-success"}) > (14.4 * 0.001)
+            and on(environment) sum by (environment) (slo:sli_error:ratio_rate1h{sloth_slo="purchase-success"}) > (14.4 * 0.001)
+            and on(environment) sum by (environment) (increase(transaction_total[5m])) >= 5
+          ) or (
+            sum by (environment) (slo:sli_error:ratio_rate30m{sloth_slo="purchase-success"}) > (6 * 0.001)
+            and on(environment) sum by (environment) (slo:sli_error:ratio_rate6h{sloth_slo="purchase-success"}) > (6 * 0.001)
+            and on(environment) sum by (environment) (increase(transaction_total[30m])) >= 30
+          )
+        for: 30s
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/runbooks/high-error-rate.md
+          summary: "Synthetic purchase SLO budget burning in {{ $labels.environment }}"
+          description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
+      - alert: PurchaseLatencyBudgetBurn
+        expr: |
+          (
+            sum by (environment) (slo:sli_error:ratio_rate5m{sloth_slo="purchase-latency"}) > (14.4 * 0.01)
+            and on(environment) sum by (environment) (slo:sli_error:ratio_rate1h{sloth_slo="purchase-latency"}) > (14.4 * 0.01)
+            and on(environment) sum by (environment) (increase(transaction_duration_seconds_count[5m])) >= 5
+          ) or (
+            sum by (environment) (slo:sli_error:ratio_rate30m{sloth_slo="purchase-latency"}) > (6 * 0.01)
+            and on(environment) sum by (environment) (slo:sli_error:ratio_rate6h{sloth_slo="purchase-latency"}) > (6 * 0.01)
+            and on(environment) sum by (environment) (increase(transaction_duration_seconds_count[30m])) >= 30
+          )
+        for: 30s
+        labels: {severity: SEV-2, service: api-gateway}
+        annotations:
+          runbook_url: docs/runbooks/high-latency.md
+          summary: "Synthetic purchase latency SLO budget burning in {{ $labels.environment }}"
+          description: "30-day objective: 99% of completed purchases within 2 s. Paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Compare per-service P95 to find the slow dependency."
+      - alert: NotificationFreshnessBudgetBurn
+        expr: |
+          (
+            sum by (environment) (slo:sli_error:ratio_rate5m{sloth_slo="notification-freshness"}) > (14.4 * 0.01)
+            and on(environment) sum by (environment) (slo:sli_error:ratio_rate1h{sloth_slo="notification-freshness"}) > (14.4 * 0.01)
+            and on(environment) sum by (environment) (increase(notification_delivery_freshness_seconds_count[5m])) >= 5
+          ) or (
+            sum by (environment) (slo:sli_error:ratio_rate30m{sloth_slo="notification-freshness"}) > (6 * 0.01)
+            and on(environment) sum by (environment) (slo:sli_error:ratio_rate6h{sloth_slo="notification-freshness"}) > (6 * 0.01)
+            and on(environment) sum by (environment) (increase(notification_delivery_freshness_seconds_count[30m])) >= 30
+          )
+        for: 30s
+        labels: {severity: SEV-2, service: notification-service}
+        annotations:
+          runbook_url: docs/runbooks/kafka-consumer-lag.md
+          summary: "Notification freshness SLO budget burning in {{ $labels.environment }}"
+          description: "30-day objective: 99% of notifications delivered within 30 s of the purchase outcome. Paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Undelivered events are not counted until delivered; check consumer lag and outbox age."
+      - alert: ServiceLatencyHigh
+        expr: telcopulse:http_p95_seconds:rate5m > 1 and on(service) sum by (service) (increase(http_request_duration_seconds_count[5m])) >= 20
+        for: 30s
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/runbooks/high-latency.md
+          summary: "{{ $labels.service }} HTTP P95 exceeds one second"
+          description: "Shared-runtime HTTP telemetry: at least twenty requests in five minutes. Investigate the affected dependency; customer impact and environment require confirmation."
+      - alert: ServiceUnavailable
+        expr: up{job="telcopulse"} == 0
+        for: 30s
+        labels: {severity: SEV-1}
+        annotations:
+          runbook_url: docs/runbooks/pod-crashloopbackoff.md
+          summary: "{{ $labels.service }} metrics target unavailable"
+      - alert: NotificationConsumerLag
+        expr: sum(kafka_consumer_lag) > 10
+        for: 30s
+        labels: {severity: SEV-2, service: notification-service}
+        annotations:
+          runbook_url: docs/runbooks/kafka-consumer-lag.md
+          summary: "Notification group is more than ten records behind"
+      - alert: EventPublicationDelayed
+        expr: event_outbox_oldest_age_seconds > 30
+        for: 30s
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/architecture/events.md
+          summary: "{{ $labels.service }} has unpublished events older than 30 seconds"
+      - alert: KafkaLagMeasurementUnavailable
+        expr: kafka_lag_collection_success == 0
+        for: 30s
+        labels: {severity: SEV-3, service: notification-service}
+        annotations:
+          runbook_url: docs/runbooks/kafka-consumer-lag.md
+          summary: "Notification lag could not be measured"
+      - alert: LogExportLoss
+        expr: sum by (service) (increase(log_export_events_total{outcome=~"failed|dropped"}[5m])) > 0
+        for: 30s
+        labels: {severity: SEV-3}
+        annotations:
+          runbook_url: docs/splunk.md
+          summary: "{{ $labels.service }} log export lost events"
+          description: "Failed or dropped exports observed in five minutes. Check receiver availability, token/index permissions and queue pressure; stdout remains the primary log stream."
+  - name: alerting-pipeline
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels: {severity: none}
+        annotations:
+          summary: "Alerting pipeline heartbeat"
+          description: "Always firing. An external dead-man's switch pages when these notifications stop arriving."
+      - alert: AlertmanagerNotificationsFailing
+        expr: sum by (integration) (increase(alertmanager_notifications_failed_total[10m])) > 0
+        for: 1m
+        labels: {severity: SEV-2}
+        annotations:
+          summary: "Alertmanager {{ $labels.integration }} deliveries are failing"
+          description: "Notifications to this integration failed in the last ten minutes. Incidents or pages may be missing; check Alertmanager logs and receiver credentials."
+          runbook_url: docs/on-call.md
+      - alert: AlertmanagerUnreachable
+        expr: (sum(prometheus_notifications_alertmanagers_discovered) or vector(0)) < 1 or sum(increase(prometheus_notifications_errors_total[5m])) > 0
+        for: 2m
+        labels: {severity: SEV-1}
+        annotations:
+          summary: "Prometheus cannot deliver alerts to Alertmanager"
+          description: "No notification or incident is produced while this fires. Check the Prometheus and Grafana alert views directly and restore Alertmanager."
+          runbook_url: docs/on-call.md
+  # Dependency and host signals from exporters and blackbox probes. They notify
+  # people but do not open incidents; see docs/on-call.md.
+  - name: dependencies
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0 or (up{job="postgres"} == 0)
+        for: 30s
+        labels: {severity: SEV-1, dependency: postgres}
+        annotations:
+          runbook_url: docs/runbooks/database-loss.md
+          summary: "PostgreSQL is unreachable from its exporter"
+          description: "Purchases, incidents and outbox publication all depend on PostgreSQL. Confirm with the tcp probe and service readiness before restoring from backup."
+      - alert: PostgresConnectionsHigh
+        expr: sum(pg_stat_activity_count) / scalar(max(pg_settings_max_connections)) > 0.8
+        for: 2m
+        labels: {severity: SEV-2, dependency: postgres}
+        annotations:
+          runbook_url: docs/runbooks/database-connection-exhaustion.md
+          summary: "PostgreSQL uses more than 80% of max_connections"
+      - alert: RedisDown
+        expr: redis_up == 0 or (up{job="redis"} == 0)
+        for: 30s
+        labels: {severity: SEV-1, dependency: redis}
+        annotations:
+          runbook_url: docs/runbooks/dependency-timeout.md
+          summary: "Redis is unreachable; new purchases are refused with 503"
+      - alert: RedisMemoryNearLimit
+        expr: redis_memory_used_bytes / (redis_memory_max_bytes > 0) > 0.9
+        for: 2m
+        labels: {severity: SEV-2, dependency: redis}
+        annotations:
+          runbook_url: docs/runbooks/dependency-timeout.md
+          summary: "Redis uses more than 90% of maxmemory with noeviction; writes will fail when full"
+      - alert: KafkaBrokerUnavailable
+        expr: (sum(kafka_brokers) or vector(0)) < 1
+        for: 1m
+        labels: {severity: SEV-1, dependency: kafka}
+        annotations:
+          runbook_url: docs/runbooks/kafka-consumer-lag.md
+          summary: "No Kafka broker is reachable from the exporter"
+          description: "Outboxes keep events durably; notifications stop until the broker returns. Lag and publication alerts are inhibited while this fires."
+      - alert: UserFacingProbeFailed
+        expr: probe_success{probe_class="user-facing"} == 0
+        for: 1m
+        labels: {severity: SEV-1}
+        annotations:
+          runbook_url: docs/runbooks/high-error-rate.md
+          summary: "Synthetic probe of {{ $labels.probe_name }} is failing"
+          description: "Blackbox probe {{ $labels.instance }} has failed for one minute from inside the stack."
+      - alert: DependencyProbeFailed
+        expr: probe_success{probe_class=~"internal|dependency"} == 0
+        for: 1m
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/runbooks/dependency-timeout.md
+          summary: "Probe of {{ $labels.instance }} is failing"
+      - alert: UserFacingProbeSlow
+        expr: avg_over_time(probe_duration_seconds{probe_class="user-facing"}[5m]) > 2
+        for: 5m
+        labels: {severity: SEV-3}
+        annotations:
+          runbook_url: docs/runbooks/high-latency.md
+          summary: "{{ $labels.probe_name }} takes more than two seconds to answer its probe"
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/runbooks/oomkilled.md
+          summary: "Host has less than 10% memory available"
+      - alert: HostDiskWillFillIn24h
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes < 0.2
+          and predict_linear(node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}[6h], 24 * 3600) < 0
+        for: 15m
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/runbooks/database-loss.md
+          summary: "Root filesystem is below 20% free and will fill within a day at the current rate"
+      - alert: MonitoringTargetDown
+        expr: up{job=~"postgres|redis|kafka|node|loki|alloy|alertmanager|blackbox-.*"} == 0
+        for: 2m
+        labels: {severity: SEV-3}
+        annotations:
+          runbook_url: docs/observability.md#infrastructure-signals
+          summary: "{{ $labels.job }} metrics target is down; its alerts cannot fire"
+

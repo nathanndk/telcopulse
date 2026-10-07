@@ -40,6 +40,10 @@ data:
   PROMETHEUS_URL: {{ $.Values.runtime.prometheusURL | quote }}
   PURCHASES_PER_MINUTE: {{ $.Values.runtime.purchasesPerMinute | quote }}
   {{- else if eq $name "incident-service" }}
+  ALERT_INGESTION: {{ $.Values.alerting.ingestion | quote }}
+  {{- if eq $.Values.alerting.ingestion "alertmanager" }}
+  ALERT_WEBHOOK_ADDR: "0.0.0.0:9094"
+  {{- end }}
   PROMETHEUS_URL: {{ $.Values.runtime.prometheusURL | quote }}
   PROMETHEUS_VIEWER_URL: {{ $.Values.runtime.prometheusViewerURL | quote }}
   PROMETHEUS_SOURCE: {{ $.Values.runtime.prometheusSource | quote }}

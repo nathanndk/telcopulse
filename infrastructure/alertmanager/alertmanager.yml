@@ -49,6 +49,15 @@ inhibit_rules:
   - source_matchers: ['alertname="ServiceUnavailable"']
     target_matchers: ['alertname=~"ServiceLatencyHigh|EventPublicationDelayed|LogExportLoss|NotificationConsumerLag|KafkaLagMeasurementUnavailable"']
     equal: [service]
+  # A down dependency explains failed probes of it and the queue symptoms it causes.
+  - source_matchers: ['alertname=~"PostgresDown|RedisDown|KafkaBrokerUnavailable"']
+    target_matchers: ['alertname=~"DependencyProbeFailed|PostgresConnectionsHigh|RedisMemoryNearLimit"']
+    equal: [dependency]
+  - source_matchers: ['alertname="KafkaBrokerUnavailable"']
+    target_matchers: ['alertname=~"NotificationConsumerLag|EventPublicationDelayed|KafkaLagMeasurementUnavailable"']
+  # An exporter that cannot reach its dependency is not a separate monitoring gap.
+  - source_matchers: ['alertname=~"PostgresDown|RedisDown|KafkaBrokerUnavailable"']
+    target_matchers: ['alertname="MonitoringTargetDown"', 'job=~"postgres|redis|kafka"']
   # A higher-severity episode of the same rule and scope suppresses lower ones.
   - source_matchers: ['severity="SEV-1"']
     target_matchers: ['severity=~"SEV-2|SEV-3"']

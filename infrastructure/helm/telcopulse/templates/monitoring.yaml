@@ -1,0 +1,134 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+# Scrapes every Go service's /metrics. jobLabel keeps job="telcopulse" so the
+# same rules work in Compose and Kubernetes; honorLabels keeps the service label
+# that each process exports.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: telcopulse
+  labels:
+    app.kubernetes.io/part-of: telcopulse
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+{{ toYaml . | indent 4 }}
+    {{- end }}
+spec:
+  jobLabel: telcopulse.io/scrape-job
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: telcopulse
+      telcopulse.io/metrics: "true"
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      honorLabels: true
+---
+{{- end }}
+{{- if .Values.monitoring.prometheusRule.enabled }}
+{{- $rules := .Files.Get "files/rules.yml" | fromYaml }}
+{{- $slo := .Files.Get "files/slo-rules.yml" | fromYaml }}
+# Rendered from the same rule files that Compose loads; scripts/sync-helm-rules.sh
+# copies them into the chart.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: telcopulse
+  labels:
+    app.kubernetes.io/part-of: telcopulse
+    {{- with .Values.monitoring.prometheusRule.labels }}
+{{ toYaml . | indent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- range $group := $rules.groups }}
+    {{- if has $group.name $.Values.monitoring.prometheusRule.groups }}
+{{ toYaml (list $group) | indent 4 }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.monitoring.prometheusRule.slo }}
+{{ toYaml $slo.groups | indent 4 }}
+    {{- end }}
+---
+{{- end }}
+{{- if .Values.monitoring.alertmanagerConfig.enabled }}
+{{- if ne .Values.alerting.ingestion "alertmanager" }}
+{{- fail "monitoring.alertmanagerConfig requires alerting.ingestion=alertmanager" }}
+{{- end }}
+{{- $telegram := .Values.monitoring.alertmanagerConfig.telegram }}
+{{- if and $telegram.enabled (eq (int64 $telegram.chatID) 0) }}
+{{- fail "monitoring.alertmanagerConfig.telegram.chatID must be the numeric Telegram chat ID" }}
+{{- end }}
+# The operator scopes this route and its inhibit rules to the release namespace.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: telcopulse
+  labels:
+    app.kubernetes.io/part-of: telcopulse
+    {{- with .Values.monitoring.alertmanagerConfig.labels }}
+{{ toYaml . | indent 4 }}
+    {{- end }}
+spec:
+  route:
+    receiver: oncall-notify
+    groupBy: [alertname, environment, service]
+    groupWait: 10s
+    groupInterval: 1m
+    repeatInterval: 4h
+    routes:
+      - receiver: incident-ingest
+        matchers: [{name: alertname, matchType: "!=", value: Watchdog}]
+        groupBy: ["..."]
+        groupWait: 0s
+        groupInterval: 30s
+        repeatInterval: 30m
+        continue: true
+      - receiver: oncall-page
+        matchers: [{name: severity, matchType: "=", value: SEV-1}]
+        repeatInterval: 30m
+      - receiver: oncall-notify
+        matchers: [{name: severity, matchType: "=", value: SEV-2}]
+        groupWait: 30s
+        repeatInterval: 2h
+      - receiver: ops-ticket
+        matchers: [{name: severity, matchType: "=", value: SEV-3}]
+        groupWait: 2m
+        groupInterval: 10m
+        repeatInterval: 24h
+  inhibitRules:
+    - sourceMatch: [{name: alertname, matchType: "=", value: ServiceUnavailable}]
+      targetMatch: [{name: alertname, matchType: "=~", value: "ServiceLatencyHigh|EventPublicationDelayed|LogExportLoss|NotificationConsumerLag|KafkaLagMeasurementUnavailable"}]
+      equal: [service]
+    - sourceMatch: [{name: severity, matchType: "=", value: SEV-1}]
+      targetMatch: [{name: severity, matchType: "=~", value: "SEV-2|SEV-3"}]
+      equal: [alertname, environment, service]
+  receivers:
+    - name: incident-ingest
+      webhookConfigs:
+        - url: http://incident-service.{{ .Release.Namespace }}.svc:9094/alertmanager
+          sendResolved: false
+          maxAlerts: 0
+          httpConfig:
+            authorization:
+              type: Bearer
+              credentials:
+                name: {{ .Values.existingSecret }}
+                key: {{ .Values.alerting.webhookTokenKey }}
+    {{- range $receiver := list "oncall-page" "oncall-notify" "ops-ticket" }}
+    - name: {{ $receiver }}
+      {{- if $telegram.enabled }}
+      telegramConfigs:
+        - botToken:
+            name: {{ $.Values.existingSecret }}
+            key: {{ $telegram.botTokenKey }}
+          chatID: {{ int64 $telegram.chatID }}
+          parseMode: HTML
+          sendResolved: {{ ne $receiver "ops-ticket" }}
+          disableNotifications: {{ eq $receiver "ops-ticket" }}
+          message: '{{ "{{" }} if eq .Status "firing" {{ "}}" }}{{ if eq $receiver "oncall-page" }}🔴 PAGE{{ else if eq $receiver "oncall-notify" }}🟠 ALERT{{ else }}🟡 TICKET{{ end }}{{ "{{" }} else {{ "}}" }}✅ RESOLVED{{ "{{" }} end {{ "}}" }} {{ "{{" }} .CommonLabels.severity | html {{ "}}" }} · {{ "{{" }} .CommonLabels.alertname | html {{ "}}" }} · {{ "{{" }} .CommonLabels.service | html {{ "}}" }} {{ "{{" }} .CommonLabels.environment | html {{ "}}" }}{{ "{{" }} range .Alerts {{ "}}" }} — {{ "{{" }} .Annotations.summary | html {{ "}}" }} ({{ "{{" }} .Annotations.runbook_url | html {{ "}}" }}){{ "{{" }} end {{ "}}" }}'
+      {{- end }}
+    {{- end }}
+---
+{{- end }}

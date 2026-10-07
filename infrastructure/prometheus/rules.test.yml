@@ -372,3 +372,72 @@ tests:
       - eval_time: 2m
         alertname: NotificationFreshnessBudgetBurn
         exp_alerts: []
+
+  - name: postgres-down
+    interval: 15s
+    input_series:
+      - series: 'pg_up{job="postgres",dependency="postgres"}'
+        values: '1 1 0x10'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PostgresDown
+        exp_alerts:
+          - exp_labels: {severity: SEV-1, dependency: postgres, job: postgres}
+            exp_annotations:
+              runbook_url: docs/runbooks/database-loss.md
+              summary: PostgreSQL is unreachable from its exporter
+              description: "Purchases, incidents and outbox publication all depend on PostgreSQL. Confirm with the tcp probe and service readiness before restoring from backup."
+
+  - name: user-facing-probe
+    interval: 15s
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="http://web:3000/",probe_class="user-facing",probe_name="web-console"}'
+        values: '1 0x10'
+      - series: 'probe_success{job="blackbox-tcp",instance="redis:6379",probe_class="dependency",dependency="redis"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: UserFacingProbeFailed
+        exp_alerts:
+          - exp_labels: {severity: SEV-1, job: blackbox-http, instance: "http://web:3000/", probe_class: user-facing, probe_name: web-console}
+            exp_annotations:
+              runbook_url: docs/runbooks/high-error-rate.md
+              summary: Synthetic probe of web-console is failing
+              description: "Blackbox probe http://web:3000/ has failed for one minute from inside the stack."
+      - eval_time: 2m
+        alertname: DependencyProbeFailed
+        exp_alerts: []
+
+  - name: kafka-brokers
+    interval: 15s
+    input_series:
+      - series: 'kafka_brokers{job="kafka",dependency="kafka"}'
+        values: '1 1 0x10'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: KafkaBrokerUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: KafkaBrokerUnavailable
+        exp_alerts:
+          - exp_labels: {severity: SEV-1, dependency: kafka}
+            exp_annotations:
+              runbook_url: docs/runbooks/kafka-consumer-lag.md
+              summary: No Kafka broker is reachable from the exporter
+              description: "Outboxes keep events durably; notifications stop until the broker returns. Lag and publication alerts are inhibited while this fires."
+
+  - name: disk-fill-prediction
+    interval: 5m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{mountpoint="/",fstype="ext4",device="/dev/sdd"}'
+        values: '190-1.5x100'
+      - series: 'node_filesystem_size_bytes{mountpoint="/",fstype="ext4",device="/dev/sdd"}'
+        values: '1000x100'
+    alert_rule_test:
+      - eval_time: 7h
+        alertname: HostDiskWillFillIn24h
+        exp_alerts:
+          - exp_labels: {severity: SEV-2, mountpoint: /, fstype: ext4, device: /dev/sdd}
+            exp_annotations:
+              runbook_url: docs/runbooks/database-loss.md
+              summary: Root filesystem is below 20% free and will fill within a day at the current rate

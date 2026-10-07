@@ -6,6 +6,10 @@ metadata:
   labels:
     app.kubernetes.io/name: {{ $name }}
     app.kubernetes.io/part-of: telcopulse
+    {{- if ne $name "web" }}
+    telcopulse.io/metrics: "true"
+    telcopulse.io/scrape-job: telcopulse
+    {{- end }}
 spec:
   type: ClusterIP
   selector:
@@ -15,5 +19,10 @@ spec:
     - name: http
       port: {{ if eq $name "web" }}3000{{ else }}8080{{ end }}
       targetPort: http
+    {{- if and (eq $name "incident-service") (eq $.Values.alerting.ingestion "alertmanager") }}
+    - name: alert-webhook
+      port: 9094
+      targetPort: alert-webhook
+    {{- end }}
 ---
 {{- end }}

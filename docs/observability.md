@@ -1,6 +1,6 @@
 # Operational measurements
 
-All Go services expose `/metrics` on their internal HTTP listener (loopback in native development). Compose does not publish service ports; only Prometheus 9090 and Grafana 3002 are bound to host loopback. Aggregate metrics contain no raw URL query, transaction ID, customer ID or MSISDN labels. No metrics are exposed through the frontend's `/api` proxy.
+All Go services expose `/metrics` on their internal HTTP listener (loopback in native development). Compose does not publish service ports; only Prometheus 9090, Alertmanager 9093 and Grafana 3002 are bound to host loopback. Aggregate metrics contain no raw URL query, transaction ID, customer ID or MSISDN labels. No metrics are exposed through the frontend's `/api` proxy.
 
 ## Signals
 
@@ -22,6 +22,31 @@ Prometheus configuration and tested rule fixtures are under `infrastructure/prom
 The provisioned Grafana dashboard is `/d/telcopulse-operations` on port 3002. It uses measured Prometheus data for business success, throughput, HTTP latency/errors, lag, backlog, connection use, CPU and memory. Anonymous local access is Viewer-only; editing/login is disabled in this local demonstration. This is not production SSO/RBAC.
 
 Monitoring configuration is copied into dedicated images because Docker on this workstation denied bind mounting the Documents directory. Persistent Prometheus and Grafana state uses named volumes. Prometheus local retention is capped at two days/256 MB (WAL/head overhead can exceed that cap).
+
+## Infrastructure signals
+
+Compose runs exporters next to the dependencies they measure. Only Prometheus can reach them, on the internal network:
+
+| Job | Exporter | Key series | Alerts |
+| --- | --- | --- | --- |
+| `postgres` | postgres_exporter 0.20.1 (password from the `postgres_password` Compose secret) | `pg_up`, `pg_stat_activity_count`, `pg_settings_max_connections`, transaction rates | `PostgresDown` (SEV-1), `PostgresConnectionsHigh` (SEV-2, above 80% of `max_connections`) |
+| `redis` | redis_exporter 1.93.0 | `redis_up`, `redis_memory_used_bytes`, `redis_memory_max_bytes` | `RedisDown` (SEV-1, purchases are refused), `RedisMemoryNearLimit` (SEV-2, `noeviction` means full memory rejects writes) |
+| `kafka` | kafka_exporter 1.10.0 | `kafka_brokers`, `kafka_consumergroup_lag` | `KafkaBrokerUnavailable` (SEV-1) |
+| `node` | node_exporter 1.12.1 with the host root mounted read-only | CPU, memory, filesystem, and textfile metrics from the backup job | `HostMemoryLow`, `HostDiskWillFillIn24h` (SEV-2) |
+| `blackbox-http`, `blackbox-tcp` | blackbox_exporter 0.29.0 | `probe_success`, `probe_duration_seconds` for the web console, gateway readiness, Alertmanager, Grafana, Jaeger, Loki, and TCP connects to PostgreSQL, Kafka and Redis | `UserFacingProbeFailed` (SEV-1), `DependencyProbeFailed` (SEV-2), `UserFacingProbeSlow` (SEV-3) |
+| `loki`, `alloy`, `alertmanager` | built-in `/metrics` | self-monitoring | `MonitoringTargetDown` (SEV-3: the target's own alerts cannot fire) |
+
+These rules notify people but do not open incidents, because the affected application service still needs triage (see the [on-call policy](on-call.md)). Alertmanager inhibits symptoms of a known cause: `PostgresDown`, `RedisDown` and `KafkaBrokerUnavailable` suppress failed probes and saturation alerts of the same `dependency`. A down broker also suppresses consumer-lag, publication-delay and lag-measurement alerts, and a down dependency suppresses `MonitoringTargetDown` for its own exporter. The **TelcoPulse infrastructure** Grafana dashboard (`/d/telcopulse-infrastructure`) plots probes, PostgreSQL, Redis, Kafka, host resources, log volume and error logs.
+
+Host metrics describe the WSL2 virtual machine on this workstation. **Per-container CPU and memory are not collected in Compose.** cAdvisor 0.60.6 was tried: under rootless Docker it could see only the root cgroup, and its Docker factory needs the system containerd socket. Container resource metrics come from kubelet/cAdvisor in the Kubernetes evaluation cluster instead (see [Kubernetes monitoring](kubernetes.md#monitoring-in-kubernetes)). The Go services' `process_*` metrics remain available.
+
+`python3 tests/integration/dependency_alerts.py` stops Redis and then Kafka for about two minutes each. It checks that `RedisDown` reaches the page receiver while the Redis probe alert is inhibited, and that `KafkaBrokerUnavailable` fires while the Kafka symptom alerts are inhibited. Both are restarted in `finally` blocks.
+
+## Logs
+
+Grafana Alloy 1.20.1 discovers the containers of the `telcopulse` Compose project through the Docker API and ships their output to Loki 3.7.8. Loki uses single-process filesystem storage with 48-hour retention, matching Prometheus. Go services log JSON through `slog`: Alloy promotes `level` to a label and keeps `trace_id` as Loki structured metadata, so high-cardinality IDs never become labels. The Grafana Loki data source turns `trace_id` into a link to the provisioned Jaeger data source. A log line therefore opens its distributed trace, and a trace can be found from an error log.
+
+The Loki ruler evaluates `ErrorLogBurst` (more than 20 ERROR lines from one service in five minutes, SEV-3) and sends it to the same Alertmanager. Alloy reads the Docker socket, which is root-equivalent on the host. Set `DOCKER_SOCKET` when the socket is not `/var/run/docker.sock`; rootless Docker uses `$XDG_RUNTIME_DIR/docker.sock`. On first start Loki rejects lines older than its retention from earlier container runs; those `timestamp too old` errors stop once the backlog is read. Splunk HEC export remains an optional, separate path.
 
 ## Validation commands
 

@@ -128,3 +128,90 @@ groups:
           summary: "Prometheus cannot deliver alerts to Alertmanager"
           description: "No notification or incident is produced while this fires. Check the Prometheus and Grafana alert views directly and restore Alertmanager."
           runbook_url: docs/on-call.md
+  # Dependency and host signals from exporters and blackbox probes. They notify
+  # people but do not open incidents; see docs/on-call.md.
+  - name: dependencies
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0 or (up{job="postgres"} == 0)
+        for: 30s
+        labels: {severity: SEV-1, dependency: postgres}
+        annotations:
+          runbook_url: docs/runbooks/database-loss.md
+          summary: "PostgreSQL is unreachable from its exporter"
+          description: "Purchases, incidents and outbox publication all depend on PostgreSQL. Confirm with the tcp probe and service readiness before restoring from backup."
+      - alert: PostgresConnectionsHigh
+        expr: sum(pg_stat_activity_count) / scalar(max(pg_settings_max_connections)) > 0.8
+        for: 2m
+        labels: {severity: SEV-2, dependency: postgres}
+        annotations:
+          runbook_url: docs/runbooks/database-connection-exhaustion.md
+          summary: "PostgreSQL uses more than 80% of max_connections"
+      - alert: RedisDown
+        expr: redis_up == 0 or (up{job="redis"} == 0)
+        for: 30s
+        labels: {severity: SEV-1, dependency: redis}
+        annotations:
+          runbook_url: docs/runbooks/dependency-timeout.md
+          summary: "Redis is unreachable; new purchases are refused with 503"
+      - alert: RedisMemoryNearLimit
+        expr: redis_memory_used_bytes / (redis_memory_max_bytes > 0) > 0.9
+        for: 2m
+        labels: {severity: SEV-2, dependency: redis}
+        annotations:
+          runbook_url: docs/runbooks/dependency-timeout.md
+          summary: "Redis uses more than 90% of maxmemory with noeviction; writes will fail when full"
+      - alert: KafkaBrokerUnavailable
+        expr: (sum(kafka_brokers) or vector(0)) < 1
+        for: 1m
+        labels: {severity: SEV-1, dependency: kafka}
+        annotations:
+          runbook_url: docs/runbooks/kafka-consumer-lag.md
+          summary: "No Kafka broker is reachable from the exporter"
+          description: "Outboxes keep events durably; notifications stop until the broker returns. Lag and publication alerts are inhibited while this fires."
+      - alert: UserFacingProbeFailed
+        expr: probe_success{probe_class="user-facing"} == 0
+        for: 1m
+        labels: {severity: SEV-1}
+        annotations:
+          runbook_url: docs/runbooks/high-error-rate.md
+          summary: "Synthetic probe of {{ $labels.probe_name }} is failing"
+          description: "Blackbox probe {{ $labels.instance }} has failed for one minute from inside the stack."
+      - alert: DependencyProbeFailed
+        expr: probe_success{probe_class=~"internal|dependency"} == 0
+        for: 1m
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/runbooks/dependency-timeout.md
+          summary: "Probe of {{ $labels.instance }} is failing"
+      - alert: UserFacingProbeSlow
+        expr: avg_over_time(probe_duration_seconds{probe_class="user-facing"}[5m]) > 2
+        for: 5m
+        labels: {severity: SEV-3}
+        annotations:
+          runbook_url: docs/runbooks/high-latency.md
+          summary: "{{ $labels.probe_name }} takes more than two seconds to answer its probe"
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/runbooks/oomkilled.md
+          summary: "Host has less than 10% memory available"
+      - alert: HostDiskWillFillIn24h
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes < 0.2
+          and predict_linear(node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}[6h], 24 * 3600) < 0
+        for: 15m
+        labels: {severity: SEV-2}
+        annotations:
+          runbook_url: docs/runbooks/database-loss.md
+          summary: "Root filesystem is below 20% free and will fill within a day at the current rate"
+      - alert: MonitoringTargetDown
+        expr: up{job=~"postgres|redis|kafka|node|loki|alloy|alertmanager|blackbox-.*"} == 0
+        for: 2m
+        labels: {severity: SEV-3}
+        annotations:
+          runbook_url: docs/observability.md#infrastructure-signals
+          summary: "{{ $labels.job }} metrics target is down; its alerts cannot fire"
+

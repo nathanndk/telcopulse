@@ -21,6 +21,8 @@ Before installation, create the target namespace, then an Opaque Secret named by
 | `SPLUNK_HEC_TOKEN` | Optional structured log export from every Go service |
 | `SPLUNK_SEARCH_TOKEN` | Optional incident log search, incident service only |
 | `DATADOG_TOKEN` | Optional infrastructure metric search, incident service only |
+| `ALERT_WEBHOOK_TOKEN` | Incident service webhook listener and the AlertmanagerConfig receiver, when `alerting.ingestion=alertmanager` |
+| `TELEGRAM_BOT_TOKEN` | Optional AlertmanagerConfig Telegram receivers |
 | `OTLP_AUTHORIZATION` | Optional authenticated OTLP export from every Go service; file contents are the full `Authorization` header value |
 | `OTLP_CA_CERTIFICATE` | Optional PEM CA bundle for OTLP export from every Go service |
 
@@ -58,3 +60,14 @@ Each credential is projected as a single key into a read-only file. HEC and OTLP
 The pod spec omits a fixed `runAsUser`, requests non-root execution, disables API-token automount, drops capabilities and blocks privilege escalation. The Go binary is executable without a fixed UID. The web image makes its Next.js cache group-0 writable for an OpenShift-assigned UID, following [Red Hat's arbitrary-UID image guidance](https://docs.redhat.com/en/documentation/openshift_container_platform/4.2/html/images/creating-images). The chart uses standard Kubernetes Ingress rather than an OpenShift-only Route; the target cluster must provide an ingress controller and admit the security context. Actual SCC admission and rollout behavior are **not yet verified on an OpenShift cluster**.
 
 Startup/readiness/liveness probes and resource limits allow controlled exercises of failed readiness, crash loops and OOM conditions. An HPA responds to CPU pressure only when a metrics server is present. Do not equate a valid manifest with proof of those failure scenarios; run them in an isolated evaluation namespace, observe pod events and TelcoPulse business telemetry, then restore the workload. `kubectl` and Helm rendering alone cannot prove real cluster behavior.
+
+## Monitoring in Kubernetes
+
+With the [Prometheus Operator](https://prometheus-operator.dev/) (for example kube-prometheus-stack), the chart can create its own monitoring resources. Each toggle requires the `monitoring.coreos.com` CRDs, and its `labels` must match the operator's selectors (kube-prometheus-stack defaults to `release: <its release name>`).
+
+- `monitoring.serviceMonitor.enabled` scrapes `/metrics` on the nine Go Services, which carry `telcopulse.io/metrics: "true"`. `jobLabel` sets `job="telcopulse"`, so rules are identical in Compose and Kubernetes.
+- `monitoring.prometheusRule.enabled` renders the selected groups of `files/rules.yml` (default `telcopulse`) and every Sloth SLO recording from `files/slo-rules.yml`. `scripts/sync-helm-rules.sh` copies both from `infrastructure/prometheus`, and `scripts/verify-helm.sh` and CI fail if the copies are stale. The `dependencies` group assumes the Compose exporters' job names; enable it only when matching exporters are scraped. kube-prometheus-stack already ships its own Watchdog and Alertmanager meta-alerts.
+- `monitoring.alertmanagerConfig.enabled` (requires `alerting.ingestion=alertmanager`) creates a namespace-scoped AlertmanagerConfig with the same severity routes and inhibition as Compose. Every alert goes to incident-service's webhook on port 9094, authenticated by the `ALERT_WEBHOOK_TOKEN` key of `existingSecret`. With `telegram.enabled` and a numeric `chatID`, the receivers page Telegram using the `TELEGRAM_BOT_TOKEN` key. The CRD only allows HTML, Markdown or MarkdownV2 messages, so the inline template HTML-escapes every label and annotation.
+
+When several release namespaces share one Prometheus, each namespace's PrometheusRule evaluates over all of them unless the Prometheus resource enforces a namespace label. Alertmanager deduplicates identical alerts, but per-namespace SLOs need `enforcedNamespaceLabel` or a dedicated Prometheus.
+

@@ -7,3 +7,33 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: false
+  - name: Alertmanager
+    uid: telcopulse-alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
+  - name: Jaeger
+    uid: telcopulse-jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false
+  - name: Loki
+    uid: telcopulse-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      # trace_id is Loki structured metadata written by Alloy; link it to Jaeger.
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: telcopulse-jaeger
+          url: "$${__value.raw}"
+          urlDisplayLabel: Open trace in Jaeger

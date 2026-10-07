@@ -45,6 +45,51 @@
         "maxReplicas": { "type": "integer", "minimum": 2 },
         "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
       }
+    },
+    "alerting": {
+      "type": "object",
+      "required": ["ingestion", "webhookTokenKey"],
+      "properties": {
+        "ingestion": { "enum": ["prometheus", "alertmanager"] },
+        "webhookTokenKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+      }
+    },
+    "monitoring": {
+      "type": "object",
+      "properties": {
+        "serviceMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+            "interval": { "type": "string", "pattern": "^[0-9]+[smh]$" }
+          }
+        },
+        "prometheusRule": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+            "groups": { "type": "array", "items": { "enum": ["telcopulse", "alerting-pipeline", "dependencies"] } },
+            "slo": { "type": "boolean" }
+          }
+        },
+        "alertmanagerConfig": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+            "telegram": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "botTokenKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "chatID": { "type": "integer" }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

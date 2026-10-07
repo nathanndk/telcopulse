@@ -1,0 +1,12 @@
+# Log-based alert evaluated by the Loki ruler and sent to Alertmanager.
+groups:
+  - name: telcopulse-logs
+    rules:
+      - alert: ErrorLogBurst
+        expr: sum by (service) (count_over_time({project="telcopulse", level="ERROR"}[5m])) > 20
+        for: 2m
+        labels: {severity: SEV-3}
+        annotations:
+          summary: "{{ $labels.service }} logged more than 20 errors in five minutes"
+          description: "Loki counted ERROR-level structured log lines. Open Grafana Explore on the Loki data source and follow trace_id links to Jaeger."
+          runbook_url: docs/observability.md#logs

@@ -1,5 +1,13 @@
 # Verification record
 
+## Infrastructure exporters, synthetic probes, logs and Kubernetes monitoring resources · 2026-10-07
+
+- Compose now runs postgres, redis, kafka, node and blackbox exporters, Loki 3.7.8 and Alloy 1.20.1. All 17 non-application scrape targets and all nine probes reported up. `promtool test rules` covers PostgresDown, KafkaBrokerUnavailable, probe failure and the 24-hour disk-fill prediction. A first fixture failed because 15-minute samples exceed Prometheus' five-minute lookback; it now uses 5-minute samples.
+- Live `tests/integration/dependency_alerts.py` (2 min 35 s): stopping Redis fired `RedisDown` toward the page receiver while `DependencyProbeFailed{dependency="redis"}` was inhibited. Stopping Kafka fired `KafkaBrokerUnavailable` and inhibited `KafkaLagMeasurementUnavailable`. Both alerts resolved after restart.
+- Loki received JSON service logs with a `level` label and `trace_id` structured metadata (checked on a real gateway request, trace `5382edba53f0a2e621e3c188c233f7fe`). The Loki ruler loaded `ErrorLogBurst`. Grafana provisioned the Loki, Jaeger and Alertmanager data sources and the new infrastructure dashboard without provisioning errors.
+- cAdvisor 0.60.6 cannot see per-container cgroups under rootless Docker on WSL2, so container CPU and memory are deferred to the Kubernetes cluster.
+- `scripts/verify-helm.sh` passes, including a monitoring render with ServiceMonitor, PrometheusRule (57 rules from the synced files) and AlertmanagerConfig validated against Kubernetes 1.34 and the Prometheus Operator CRD schemas, plus rejection of AlertmanagerConfig without webhook ingestion and of Telegram without a chat ID. The script falls back to a Ruby container when Ruby is not installed. Live operator reconciliation is covered by the Kubernetes evaluation entry below.
+
 ## Latency and freshness SLOs, SLO-as-code and error budget gate · 2026-10-07
 
 - SLOs are generated from `infrastructure/slo/telcopulse.yml` by Sloth v0.16.0 (`scripts/generate-slo-rules.sh --check` passes). `promtool test rules` passes on Prometheus 3.13.3 with the burn alerts evaluated on the generated recordings, including fixtures that use Prometheus 3's normalized `le="2.0"` bucket label. A first live run found that `le="2"` matches nothing on Prometheus 3, which is why the selectors accept both forms.

@@ -116,7 +116,7 @@ Purchase outcomes, payment state changes and synthetic delivery receipts now pub
 
 ## Monitoring (implementation in progress)
 
-Prometheus metrics, Alertmanager routing (loopback port 9093) and a provisioned Grafana operations dashboard are implemented. Go tests, containerized rule checks, live alert/lag recovery checks and all four browser tests pass. See [observability contracts and commands](docs/observability.md) and [verification status](docs/VERIFICATION.md). Loopback endpoints are Prometheus on 9090 and Grafana on 3002. Run `scripts/init-env.sh` to generate the separate Grafana administrator secret before building the new stack.
+Prometheus metrics, Alertmanager routing (loopback port 9093), PostgreSQL/Redis/Kafka/host exporters, blackbox synthetic probes, Loki log aggregation with log-to-trace links, and provisioned Grafana operations and infrastructure dashboards are implemented. Go tests, containerized rule checks, live alert/lag recovery checks and all four browser tests pass. See [observability contracts and commands](docs/observability.md) and [verification status](docs/VERIFICATION.md). Loopback endpoints are Prometheus on 9090 and Grafana on 3002. Run `scripts/init-env.sh` to generate the separate Grafana administrator secret before building the new stack.
 
 HTTP/PostgreSQL OpenTelemetry instrumentation and correlated HTTP logs are implemented and tested. Set `OTEL_EXPORTER_OTLP_ENDPOINT` to a reachable OTLP/HTTP base URL to enable export. Compose now exports to the local Jaeger viewer at http://localhost:16686 by default; durable Kafka producer/consumer trace propagation is also verified; see [tracing scope and verification](docs/observability.md).
 

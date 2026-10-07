@@ -104,3 +104,34 @@ services:
   web:
     replicas: 1
     secretKeys: []
+
+# Alert ingestion for incident-service. "alertmanager" opens a webhook listener on
+# port 9094 that only accepts ALERT_WEBHOOK_TOKEN from existingSecret; use it with
+# monitoring.alertmanagerConfig. "prometheus" polls runtime.prometheusURL.
+alerting:
+  ingestion: prometheus
+  webhookTokenKey: ALERT_WEBHOOK_TOKEN
+
+# Prometheus Operator resources (kube-prometheus-stack). Each requires the
+# monitoring.coreos.com CRDs; labels must match the operator's selectors.
+monitoring:
+  serviceMonitor:
+    enabled: false
+    labels: {}
+    interval: 15s
+  prometheusRule:
+    enabled: false
+    labels: {}
+    # Groups from files/rules.yml. "dependencies" needs the exporters that the
+    # Compose stack runs; kube-prometheus-stack already ships its own Watchdog
+    # and Alertmanager meta-alerts.
+    groups: [telcopulse]
+    slo: true
+  alertmanagerConfig:
+    enabled: false
+    labels: {}
+    telegram:
+      enabled: false
+      botTokenKey: TELEGRAM_BOT_TOKEN
+      # Numeric chat ID (not a secret), for example -1001234567890.
+      chatID: 0
