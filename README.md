@@ -12,7 +12,7 @@ The overview also shows rolling 30-day [purchase success and purchase latency SL
 It also reports [30-day operational response metrics](docs/operational-metrics.md) from incident audit and deployment event records, with sample counts and explicit no-data states.
 Failed synthetic purchases can be [replayed as linked new attempts](docs/transaction-replay.md) from the simulator or transaction investigation page.
 
-**The full platform is still in development.** Incident operations, failure injection, local tracing, reported deployment tracking and optional protected local-account sessions with RBAC now exist. A [Helm chart](docs/kubernetes.md) packages the application for protected Kubernetes evaluation, the [GitLab CI definition](docs/ci-cd.md) covers verification and image publication, and a [Jenkins workflow](docs/deployment-automation.md) defines evaluation promotion and rollback. No live CI or cluster deployment has been verified. SSO, real Splunk/Dynatrace/Datadog integration, production deployment and remaining failure scenarios still require work. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md), [authentication scope](docs/authentication.md), [current product brief](docs/PROJECT_GOAL.md), and [expanded active goal](docs/EXPANDED_PROJECT_GOAL.md).
+**The full platform is still in development.** Incident operations, failure injection, local tracing, reported deployment tracking and optional protected local-account sessions with RBAC now exist. A [Helm chart](docs/kubernetes.md) packages the application for protected Kubernetes evaluation, the [GitLab CI definition](docs/ci-cd.md) covers verification, Trivy dependency/IaC/image scanning, SBOMs and cosign-signed image publication, and a [Jenkins workflow](docs/deployment-automation.md) defines evaluation promotion and rollback. No live CI or cluster deployment has been verified. SSO, real Splunk/Dynatrace/Datadog integration, production deployment and remaining failure scenarios still require work. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md), [authentication scope](docs/authentication.md), [current product brief](docs/PROJECT_GOAL.md), and [expanded active goal](docs/EXPANDED_PROJECT_GOAL.md).
 
 Incident detail also has an optional [Datadog container evidence adapter](docs/datadog.md) for scoped Kubernetes restart, memory and CPU measurements. It is unconfigured in the default local stack and has not been verified against a real Datadog account or cluster.
 
@@ -36,7 +36,7 @@ Named PostgreSQL and Kafka volumes preserve purchases and events across restarts
 
 ## Local development
 
-Requires Node 22+, Go 1.25+, PostgreSQL 15+, Apache Kafka and Redis. Start the local broker with `docker compose up -d kafka redis`; `KAFKA_BROKERS` defaults to `127.0.0.1:19092` and `REDIS_URL` to `redis://127.0.0.1:16379/0`. Use your own local database and connection credentials.
+Requires Node 22+, Go 1.26+, PostgreSQL 15+, Apache Kafka and Redis. Start the local broker with `docker compose up -d kafka redis`; `KAFKA_BROKERS` defaults to `127.0.0.1:19092` and `REDIS_URL` to `redis://127.0.0.1:16379/0`. Use your own local database and connection credentials.
 
 ```sh
 npm ci

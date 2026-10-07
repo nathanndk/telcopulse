@@ -15,6 +15,9 @@ RUN --mount=type=tmpfs,target=/app/node_modules \
     cp -a apps/web/.next/standalone /output/standalone && \
     cp -a apps/web/.next/static /output/static
 FROM node:22-alpine
+# The standalone server needs only the node binary. npm, npx, corepack and yarn
+# ship their own dependency trees, which carried HIGH/CRITICAL findings in Trivy.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

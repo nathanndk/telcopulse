@@ -8,7 +8,7 @@ set -eu
 : "${BACKUP_DIR:=/backups}" "${TEXTFILE_DIR:=/textfile}"
 : "${BACKUP_INTERVAL_SECONDS:=3600}" "${BACKUP_RETAIN:=48}"
 export PGHOST PGDATABASE PGUSER
-PGPASSWORD="$(cat /run/secrets/postgres_password)"
+PGPASSWORD="$(cat "${POSTGRES_PASSWORD_FILE:-/run/secrets/postgres_password}")"
 export PGPASSWORD
 failures=0
 

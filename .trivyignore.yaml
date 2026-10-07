@@ -1,0 +1,12 @@
+# Accepted Trivy findings for `trivy config`; each needs a reason. Reviewed with
+# the supply-chain controls in docs/ci-cd.md.
+misconfigurations:
+  - id: DS-0002
+    paths: [infrastructure/alloy/Dockerfile]
+    statement: Alloy tails containers through the Docker socket, which is root-equivalent regardless of the container user.
+  - id: DS-0002
+    paths: [infrastructure/backup/Dockerfile]
+    statement: The entrypoint starts as root only to chown the Docker-created volumes, then drops to the postgres user with su-exec.
+  - id: KSV-0014
+    paths: [infrastructure/kubernetes/kind/dependencies.yaml]
+    statement: The evaluation-only Kafka image renders server.properties under /opt/kafka at start; PostgreSQL and Redis are read-only.

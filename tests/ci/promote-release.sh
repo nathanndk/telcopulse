@@ -56,7 +56,12 @@ if [[ "$1" == login ]]; then cat >/dev/null; fi
 printf '%s\n' "$*" >> "$COMMAND_LOG"
 if [[ "$*" == *'manifest inspect'* && "$*" == *"${MOCK_MISSING_IMAGE:-not-a-service}:"* ]]; then exit 1; fi
 MOCK
-chmod +x "$temp_dir/kubectl" "$temp_dir/helm" "$temp_dir/docker" "$temp_dir/curl"
+cat > "$temp_dir/cosign" <<'MOCK'
+#!/usr/bin/env bash
+printf 'cosign %s\n' "$*" >> "$COMMAND_LOG"
+if [[ "$*" == *"/${MOCK_UNSIGNED:-not-a-service}:"* ]]; then exit 1; fi
+MOCK
+chmod +x "$temp_dir/kubectl" "$temp_dir/helm" "$temp_dir/docker" "$temp_dir/curl" "$temp_dir/cosign"
 
 export PATH="$temp_dir:$PATH"
 export COMMAND_LOG="$temp_dir/commands"
@@ -98,6 +103,21 @@ unset MOCK_MISSING_IMAGE
 export ACTION=PREFLIGHT_DEPLOY
 bash "$repo_root/scripts/promote-release.sh" >"$temp_dir/output"
 test "$(grep -c '^manifest inspect ' "$COMMAND_LOG")" -eq 10
+if grep -q '^cosign ' "$COMMAND_LOG"; then echo 'DEV verified signatures without a key' >&2; exit 1; fi
+
+# With a public key, every image needs a valid signature and SBOM attestation.
+export COSIGN_PUBLIC_KEY="$temp_dir/cosign.pub"
+echo synthetic-public-key > "$COSIGN_PUBLIC_KEY"
+: > "$COMMAND_LOG"
+bash "$repo_root/scripts/promote-release.sh" >"$temp_dir/output"
+test "$(grep -c '^cosign verify --key ' "$COMMAND_LOG")" -eq 10
+test "$(grep -c '^cosign verify-attestation --key .* --type cyclonedx ' "$COMMAND_LOG")" -eq 10
+: > "$COMMAND_LOG"
+if MOCK_UNSIGNED=payment-service bash "$repo_root/scripts/promote-release.sh" >"$temp_dir/output" 2>&1; then
+  echo 'Unsigned image was accepted' >&2; exit 1
+fi
+grep -q 'Image signature verification failed for payment-service' "$temp_dir/output"
+unset COSIGN_PUBLIC_KEY
 test ! -s "$EVENT_LOG"
 if grep -q ' upgrade ' "$COMMAND_LOG"; then echo 'Preflight changed a release' >&2; exit 1; fi
 
@@ -192,6 +212,12 @@ if grep -q '^login ' "$COMMAND_LOG"; then echo 'Smoke requested registry credent
 
 : > "$COMMAND_LOG"
 export TARGET=PRODUCTION_LIKE KUBE_CONTEXT_PRODUCTION_LIKE=mock-dev
+export ACTION=PREFLIGHT_DEPLOY REGISTRY_PASSWORD=synthetic-test-value
+if bash "$repo_root/scripts/promote-release.sh" >"$temp_dir/output" 2>&1; then
+  echo 'Production-like deploy without signature verification was accepted' >&2; exit 1
+fi
+grep -q 'COSIGN_PUBLIC_KEY is required' "$temp_dir/output"
+: > "$COMMAND_LOG"
 export ACTION=ROLLBACK ROLLBACK_REVISION=3
 bash "$repo_root/scripts/promote-release.sh" >"$temp_dir/output"
 grep -q 'get namespace telcopulse-eval-production' "$COMMAND_LOG"

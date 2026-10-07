@@ -21,7 +21,7 @@ frontend:
 
 go-unit:
   stage: verify
-  image: golang:1.25-bookworm
+  image: golang:1.26-bookworm
   variables:
     GOTOOLCHAIN: local
   script:
@@ -36,7 +36,7 @@ go-unit:
 
 go-postgres-integration:
   stage: verify
-  image: golang:1.25-bookworm
+  image: golang:1.26-bookworm
   services:
     - name: postgres:17-alpine
       alias: postgres
@@ -117,6 +117,24 @@ error-budget-gate:
     - apk add --no-cache bash curl jq python3 >/dev/null
     - bash tests/ci/error-budget-gate.sh
 
+# Supply chain: fail on fixable HIGH/CRITICAL dependency vulnerabilities and on
+# HIGH/CRITICAL IaC misconfigurations (accepted exceptions: .trivyignore.yaml).
+dependency-scan:
+  stage: verify
+  image:
+    name: aquasec/trivy:0.75.0
+    entrypoint: [""]
+  script:
+    - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --skip-dirs node_modules .
+
+iac-scan:
+  stage: verify
+  image:
+    name: aquasec/trivy:0.75.0
+    entrypoint: [""]
+  script:
+    - trivy config --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml .
+
 publication-contract:
   stage: verify
   image: alpine:3.22
@@ -149,7 +167,15 @@ publish-images:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
   dependencies: []
+  before_script:
+    - sh scripts/install-supply-chain-tools.sh
   script:
+    # Scans each image before push, then signs it and attests its CycloneDX SBOM.
     - sh scripts/publish-images.sh
+  artifacts:
+    expire_in: 90 days
+    paths:
+      - sbom/
+      - release-digests.txt
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'

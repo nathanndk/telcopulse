@@ -48,7 +48,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
-            readOnlyRootFilesystem: {{ ne $name "web" }}
+            readOnlyRootFilesystem: true
           ports:
             - name: http
               containerPort: {{ if eq $name "web" }}3000{{ else }}8080{{ end }}
@@ -106,6 +106,14 @@ spec:
               readOnly: true
             {{- end }}
           {{- end }}
+          {{- end }}
+          {{- if eq $name "web" }}
+          # Next.js writes only its image cache and temporary files.
+          volumeMounts:
+            - name: next-cache
+              mountPath: /app/apps/web/.next/cache
+            - name: tmp
+              mountPath: /tmp
           {{- end }}
           startupProbe:
             httpGet:
@@ -178,6 +186,13 @@ spec:
                 path: certificate
         {{- end }}
       {{- end }}
+      {{- end }}
+      {{- if eq $name "web" }}
+      volumes:
+        - name: next-cache
+          emptyDir: {sizeLimit: 256Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
       {{- end }}
 ---
 {{- end }}

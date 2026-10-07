@@ -156,6 +156,20 @@ case "$ACTION" in
     for service in auth-service subscriber-service package-service payment-service notification-service incident-service simulation-service deployment-service api-gateway web; do
       docker manifest inspect "$registry_path/$service:$IMAGE_SHA" >/dev/null || die "Missing published image for $service"
     done
+    # Deploy only images signed by the CI key, with a signed SBOM attached.
+    if [[ -n "${COSIGN_PUBLIC_KEY:-}" ]]; then
+      [[ -r "$COSIGN_PUBLIC_KEY" ]] || die 'COSIGN_PUBLIC_KEY must name a readable public key file'
+      command -v cosign >/dev/null || die 'cosign is required to verify image signatures'
+      # Must match the publication job's COSIGN_TRANSPARENCY_LOG (default off).
+      tlog=(--insecure-ignore-tlog=true)
+      [[ "${COSIGN_TRANSPARENCY_LOG:-off}" == public ]] && tlog=()
+      for service in auth-service subscriber-service package-service payment-service notification-service incident-service simulation-service deployment-service api-gateway web; do
+        cosign verify --key "$COSIGN_PUBLIC_KEY" "${tlog[@]}" "$registry_path/$service:$IMAGE_SHA" >/dev/null || die "Image signature verification failed for $service"
+        cosign verify-attestation --key "$COSIGN_PUBLIC_KEY" --type cyclonedx "${tlog[@]}" "$registry_path/$service:$IMAGE_SHA" >/dev/null || die "SBOM attestation verification failed for $service"
+      done
+    elif [[ "$TARGET" != DEV ]]; then
+      die 'COSIGN_PUBLIC_KEY is required to verify image signatures for STAGING and PRODUCTION_LIKE'
+    fi
     if [[ "$ACTION" == PREFLIGHT_DEPLOY ]]; then
       printf 'Deployment preflight passed: %s, ten images at %s\n' "$TARGET" "$IMAGE_SHA"
       exit 0

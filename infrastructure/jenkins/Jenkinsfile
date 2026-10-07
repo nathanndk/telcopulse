@@ -27,7 +27,8 @@ pipeline {
       steps {
         withCredentials([
           file(credentialsId: 'telcopulse-evaluation-kubeconfig', variable: 'KUBECONFIG'),
-          usernamePassword(credentialsId: 'telcopulse-registry-read', usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASSWORD')
+          usernamePassword(credentialsId: 'telcopulse-registry-read', usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASSWORD'),
+          file(credentialsId: 'telcopulse-cosign-public-key', variable: 'COSIGN_PUBLIC_KEY')
         ]) {
           withEnv(['ACTION=PREFLIGHT_DEPLOY']) {
             sh 'bash scripts/promote-release.sh'
@@ -67,7 +68,8 @@ pipeline {
         }
         withCredentials([
           file(credentialsId: 'telcopulse-evaluation-kubeconfig', variable: 'KUBECONFIG'),
-          usernamePassword(credentialsId: 'telcopulse-registry-read', usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASSWORD')
+          usernamePassword(credentialsId: 'telcopulse-registry-read', usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASSWORD'),
+          file(credentialsId: 'telcopulse-cosign-public-key', variable: 'COSIGN_PUBLIC_KEY')
         ]) {
           sh 'bash scripts/promote-release.sh'
         }
