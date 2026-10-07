@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 	"net/http"
@@ -19,7 +20,22 @@ func main() {
 		slog.Error("INCIDENT_OPERATOR_TOKEN must be distinct and at least 32 characters")
 		os.Exit(1)
 	}
-	worker, err := incident.PrometheusWorker(os.Getenv("PROMETHEUS_URL"), os.Getenv("PROMETHEUS_SOURCE"), os.Getenv("PROMETHEUS_ENVIRONMENT"), os.Getenv("PROMETHEUS_VIEWER_URL"))
+	// Alertmanager push replaces polling so routing, grouping, inhibition and
+	// silences apply to incident creation as well as human notification.
+	var worker runtime.Worker
+	var err error
+	switch os.Getenv("ALERT_INGESTION") {
+	case "alertmanager":
+		addr := os.Getenv("ALERT_WEBHOOK_ADDR")
+		if addr == "" {
+			addr = "127.0.0.1:9094"
+		}
+		worker, err = incident.AlertmanagerReceiver(addr, os.Getenv("ALERT_WEBHOOK_TOKEN"), os.Getenv("SERVICE_TOKEN"), mutationToken, os.Getenv("PROMETHEUS_SOURCE"), os.Getenv("PROMETHEUS_ENVIRONMENT"), os.Getenv("PROMETHEUS_VIEWER_URL"))
+	case "", "prometheus":
+		worker, err = incident.PrometheusWorker(os.Getenv("PROMETHEUS_URL"), os.Getenv("PROMETHEUS_SOURCE"), os.Getenv("PROMETHEUS_ENVIRONMENT"), os.Getenv("PROMETHEUS_VIEWER_URL"))
+	default:
+		err = errors.New("ALERT_INGESTION must be prometheus or alertmanager")
+	}
 	if err != nil {
 		slog.Error("invalid alert ingestion configuration", "error", err)
 		os.Exit(1)

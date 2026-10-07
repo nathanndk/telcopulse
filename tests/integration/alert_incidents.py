@@ -2,7 +2,7 @@
 import json
 import time
 import urllib.request
-from kafka_recovery import BASE_URL, compose
+from kafka_recovery import BASE_URL, compose, PROMETHEUS_URL
 
 
 def read(path):
@@ -22,7 +22,7 @@ def records():
 
 
 def firing():
-    with urllib.request.urlopen("http://localhost:9090/api/v1/alerts", timeout=5) as response:
+    with urllib.request.urlopen(PROMETHEUS_URL + "/api/v1/alerts", timeout=5) as response:
         return any(a["state"] == "firing" and a["labels"].get("alertname") == "ServiceUnavailable" and a["labels"].get("service") == "payment-service" for a in json.load(response)["data"]["alerts"])
 
 

@@ -1,0 +1,105 @@
+# TelcoPulse alert routing. The entrypoint removes the telegram/heartbeat blocks
+# when their secret files are absent; incident ingestion is always configured.
+global:
+  resolve_timeout: 5m
+templates:
+  - /etc/alertmanager/telcopulse.tmpl
+
+route:
+  receiver: oncall-notify
+  group_by: [alertname, environment, service]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    # Every alert reaches incident-service first. It opens incidents only for
+    # rules with a known application scope; continue keeps human routing.
+    - receiver: incident-ingest
+      matchers: ['alertname!="Watchdog"']
+      group_by: ['...']
+      group_wait: 0s
+      group_interval: 30s
+      repeat_interval: 30m
+      continue: true
+    # Always-firing heartbeat proves the Prometheus → Alertmanager path end to end.
+    - receiver: heartbeat
+      matchers: ['alertname="Watchdog"']
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
+    - receiver: oncall-page
+      matchers: ['severity="SEV-1"']
+      group_wait: 10s
+      repeat_interval: 30m
+    - receiver: oncall-notify
+      matchers: ['severity="SEV-2"']
+      group_wait: 30s
+      repeat_interval: 2h
+    - receiver: ops-ticket
+      matchers: ['severity="SEV-3"']
+      group_wait: 2m
+      group_interval: 10m
+      repeat_interval: 24h
+    # Unlabelled rules still reach a human; the incident route above has matched already.
+    - receiver: oncall-notify
+
+inhibit_rules:
+  # A missing scrape target explains its own latency, publication, consumer and
+  # log-export symptoms; page once for the cause.
+  - source_matchers: ['alertname="ServiceUnavailable"']
+    target_matchers: ['alertname=~"ServiceLatencyHigh|EventPublicationDelayed|LogExportLoss|NotificationConsumerLag|KafkaLagMeasurementUnavailable"']
+    equal: [service]
+  # A higher-severity episode of the same rule and scope suppresses lower ones.
+  - source_matchers: ['severity="SEV-1"']
+    target_matchers: ['severity=~"SEV-2|SEV-3"']
+    equal: [alertname, environment, service]
+
+receivers:
+  - name: incident-ingest
+    webhook_configs:
+      - url: http://incident-service:9094/alertmanager
+        send_resolved: false
+        max_alerts: 0
+        timeout: 10s
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/alert_webhook_token
+  - name: heartbeat
+    # heartbeat:begin
+    webhook_configs:
+      - url_file: /run/secrets/heartbeat_url
+        send_resolved: false
+        timeout: 10s
+    # heartbeat:end
+  - name: oncall-page
+    # telegram:begin
+    telegram_configs:
+      - api_url: __TELEGRAM_API_URL__
+        bot_token_file: /run/secrets/telegram_bot_token
+        chat_id_file: /run/secrets/telegram_chat_id
+        parse_mode: ''
+        message: '{{ template "telcopulse.telegram.message" . }}'
+        send_resolved: true
+    # telegram:end
+  - name: oncall-notify
+    # telegram:begin
+    telegram_configs:
+      - api_url: __TELEGRAM_API_URL__
+        bot_token_file: /run/secrets/telegram_bot_token
+        chat_id_file: /run/secrets/telegram_chat_id
+        parse_mode: ''
+        message: '{{ template "telcopulse.telegram.message" . }}'
+        send_resolved: true
+    # telegram:end
+  - name: ops-ticket
+    # telegram:begin
+    telegram_configs:
+      - api_url: __TELEGRAM_API_URL__
+        bot_token_file: /run/secrets/telegram_bot_token
+        chat_id_file: /run/secrets/telegram_chat_id
+        parse_mode: ''
+        disable_notifications: true
+        message: '{{ template "telcopulse.telegram.message" . }}'
+        send_resolved: false
+    # telegram:end

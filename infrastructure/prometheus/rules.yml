@@ -29,6 +29,7 @@ groups:
         for: 30s
         labels: {severity: SEV-2}
         annotations:
+          runbook_url: docs/runbooks/high-error-rate.md
           summary: "Synthetic purchase SLO budget burning in {{ $labels.environment }}"
           description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
       - alert: ServiceLatencyHigh
@@ -36,6 +37,7 @@ groups:
         for: 30s
         labels: {severity: SEV-2}
         annotations:
+          runbook_url: docs/runbooks/high-latency.md
           summary: "{{ $labels.service }} HTTP P95 exceeds one second"
           description: "Shared-runtime HTTP telemetry: at least twenty requests in five minutes. Investigate the affected dependency; customer impact and environment require confirmation."
       - alert: ServiceUnavailable
@@ -43,29 +45,58 @@ groups:
         for: 30s
         labels: {severity: SEV-1}
         annotations:
+          runbook_url: docs/runbooks/pod-crashloopbackoff.md
           summary: "{{ $labels.service }} metrics target unavailable"
       - alert: NotificationConsumerLag
         expr: sum(kafka_consumer_lag) > 10
         for: 30s
-        labels: {severity: SEV-2}
+        labels: {severity: SEV-2, service: notification-service}
         annotations:
+          runbook_url: docs/runbooks/kafka-consumer-lag.md
           summary: "Notification group is more than ten records behind"
       - alert: EventPublicationDelayed
         expr: event_outbox_oldest_age_seconds > 30
         for: 30s
         labels: {severity: SEV-2}
         annotations:
+          runbook_url: docs/architecture/events.md
           summary: "{{ $labels.service }} has unpublished events older than 30 seconds"
       - alert: KafkaLagMeasurementUnavailable
         expr: kafka_lag_collection_success == 0
         for: 30s
-        labels: {severity: SEV-3}
+        labels: {severity: SEV-3, service: notification-service}
         annotations:
+          runbook_url: docs/runbooks/kafka-consumer-lag.md
           summary: "Notification lag could not be measured"
       - alert: LogExportLoss
         expr: sum by (service) (increase(log_export_events_total{outcome=~"failed|dropped"}[5m])) > 0
         for: 30s
         labels: {severity: SEV-3}
         annotations:
+          runbook_url: docs/splunk.md
           summary: "{{ $labels.service }} log export lost events"
           description: "Failed or dropped exports observed in five minutes. Check receiver availability, token/index permissions and queue pressure; stdout remains the primary log stream."
+  - name: alerting-pipeline
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels: {severity: none}
+        annotations:
+          summary: "Alerting pipeline heartbeat"
+          description: "Always firing. An external dead-man's switch pages when these notifications stop arriving."
+      - alert: AlertmanagerNotificationsFailing
+        expr: sum by (integration) (increase(alertmanager_notifications_failed_total[10m])) > 0
+        for: 1m
+        labels: {severity: SEV-2}
+        annotations:
+          summary: "Alertmanager {{ $labels.integration }} deliveries are failing"
+          description: "Notifications to this integration failed in the last ten minutes. Incidents or pages may be missing; check Alertmanager logs and receiver credentials."
+          runbook_url: docs/on-call.md
+      - alert: AlertmanagerUnreachable
+        expr: (sum(prometheus_notifications_alertmanagers_discovered) or vector(0)) < 1 or sum(increase(prometheus_notifications_errors_total[5m])) > 0
+        for: 2m
+        labels: {severity: SEV-1}
+        annotations:
+          summary: "Prometheus cannot deliver alerts to Alertmanager"
+          description: "No notification or incident is produced while this fires. Check the Prometheus and Grafana alert views directly and restore Alertmanager."
+          runbook_url: docs/on-call.md

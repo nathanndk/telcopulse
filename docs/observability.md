@@ -17,7 +17,7 @@ HTTP/business counters reset on process restart. Business counting is process-lo
 
 Incident detail now retrieves a bounded historical range from Prometheus through incident-service. It computes five fixed 5-minute-rate series over a detection-aligned 2/24/72-hour window, with at most 120 requested evaluation points and no browser-supplied PromQL. Synthetic business success and transactions per minute use the incident environment; HTTP request rate, 5xx fraction and P95 use the affected service's shared process across development and staging. Empty, NaN and idle ratio samples are not presented as healthy values. The charts label their source and scope; the current five-minute service snapshot remains a separate panel. See the [Prometheus range-query API](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries).
 
-Prometheus configuration and tested rule fixtures are under `infrastructure/prometheus`. Rules detect service scrape failure, paired-window synthetic purchase SLO burn (5m/1h at 14.4× or 30m/6h at 6×, with short-window traffic floors), high HTTP P95 with a twenty-request floor, notification lag, delayed event publication, unavailable lag collection and log-export loss. The incident service polls these rules and creates deduplicated TelcoPulse incidents for supported alert episodes; this is snapshot polling, not durable alert delivery. External paging is not configured. See the [incident ingestion contract](incidents.md) and [runbooks](runbooks/README.md).
+Prometheus configuration and tested rule fixtures are under `infrastructure/prometheus`. Rules detect service scrape failure, paired-window synthetic purchase SLO burn (5m/1h at 14.4× or 30m/6h at 6×, with short-window traffic floors), high HTTP P95 with a twenty-request floor, notification lag, delayed event publication, unavailable lag collection and log-export loss. Prometheus sends firing alerts to Alertmanager (loopback port 9093), which routes them by severity, applies inhibition and silences, posts them to incident-service for deduplicated incident creation, and optionally pages Telegram. Every rule carries a `runbook_url` annotation. See the [on-call and routing policy](on-call.md), the [incident ingestion contract](incidents.md) and the [runbooks](runbooks/README.md).
 
 The provisioned Grafana dashboard is `/d/telcopulse-operations` on port 3002. It uses measured Prometheus data for business success, throughput, HTTP latency/errors, lag, backlog, connection use, CPU and memory. Anonymous local access is Viewer-only; editing/login is disabled in this local demonstration. This is not production SSO/RBAC.
 
@@ -28,12 +28,13 @@ Monitoring configuration is copied into dedicated images because Docker on this 
 ```sh
 docker compose run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
 docker compose run --rm --no-deps -w /etc/prometheus --entrypoint promtool prometheus test rules rules.test.yml
+bash tests/ci/alertmanager-config.sh
 WEB_PORT=3001 python3 tests/integration/metrics.py
 ```
 
 The live test intentionally creates synthetic business failures and pauses the notification consumer to prove alerting and lag recovery. It restores the consumer afterward. Current verification status is tracked in `VERIFICATION.md`.
 
-The local stack now exports distributed OTel spans to Jaeger and can optionally export structured logs to Splunk HEC. Real Splunk indexing, Dynatrace ingestion, host/Kubernetes metrics and durable external alert delivery remain unfinished. Stored workflow stage references are not exported span IDs.
+The local stack now exports distributed OTel spans to Jaeger and can optionally export structured logs to Splunk HEC. Real Splunk indexing and Dynatrace ingestion remain unfinished. Telegram delivery is verified against a local mock of the Bot API; a real bot needs the operator's own token. Stored workflow stage references are not exported span IDs.
 
 ## Distributed tracing (HTTP and PostgreSQL)
 

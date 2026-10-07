@@ -1,0 +1,14 @@
+{{/* Plain-text Telegram message: no parse mode, so label values need no escaping. */}}
+{{ define "telcopulse.telegram.message" -}}
+{{ if eq .Status "firing" }}{{ if eq .CommonLabels.severity "SEV-1" }}🔴 PAGE{{ else if eq .CommonLabels.severity "SEV-2" }}🟠 ALERT{{ else }}🟡 TICKET{{ end }}{{ else }}✅ RESOLVED{{ end }} {{ .CommonLabels.severity }} · {{ .CommonLabels.alertname }}
+{{ with .CommonLabels.environment }}Environment: {{ . }}
+{{ end }}{{ with .CommonLabels.service }}Service: {{ . }}
+{{ end }}
+{{ range .Alerts -}}
+{{ if eq .Status "firing" }}• {{ else }}✓ {{ end }}{{ .Annotations.summary }}
+  since {{ .StartsAt.UTC.Format "2006-01-02 15:04:05 UTC" }}{{ if eq .Status "resolved" }}, resolved {{ .EndsAt.UTC.Format "15:04:05 UTC" }}{{ end }}
+{{ with .Annotations.runbook_url }}  runbook: {{ . }}
+{{ end }}{{ end }}
+{{ if eq .Status "firing" }}Acknowledge in TelcoPulse Incidents; silence in Alertmanager only with an owner and expiry.
+{{ end }}Alertmanager: {{ .ExternalURL }}
+{{- end }}

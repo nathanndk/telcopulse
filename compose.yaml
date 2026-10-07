@@ -109,8 +109,11 @@ services:
       context: ./services
       args: {SERVICE: incident-service}
     environment:
+      ALERT_INGESTION: alertmanager
+      ALERT_WEBHOOK_ADDR: 0.0.0.0:9094
+      ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:?Run scripts/init-env.sh first}
       PROMETHEUS_URL: http://prometheus:9090
-      PROMETHEUS_SOURCE: local-prometheus
+      PROMETHEUS_SOURCE: local-alertmanager
       PROMETHEUS_ENVIRONMENT: development
       PROMETHEUS_VIEWER_URL: ${PROMETHEUS_VIEWER_URL:-http://localhost:9090}
       JAEGER_QUERY_URL: ${JAEGER_QUERY_URL-http://jaeger:16686}
@@ -281,6 +284,19 @@ services:
     volumes:
       - prometheus_data:/prometheus
     networks: [internal, frontend]
+  alertmanager:
+    build: ./infrastructure/alertmanager
+    command: ["--storage.path=/alertmanager", "--web.external-url=${ALERTMANAGER_VIEWER_URL:-http://localhost:9093}", "--cluster.listen-address="]
+    ports: ["127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"]
+    secrets: [alert_webhook_token]
+    volumes:
+      - alertmanager_data:/alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal, frontend]
   grafana:
     build: ./infrastructure/grafana
     environment:
@@ -310,9 +326,13 @@ services:
       timeout: 5s
       retries: 20
     networks: [internal, frontend]
+secrets:
+  alert_webhook_token:
+    environment: ALERT_WEBHOOK_TOKEN
 volumes:
   postgres_data:
   prometheus_data:
+  alertmanager_data:
   grafana_data:
   kafka_data:
 networks:

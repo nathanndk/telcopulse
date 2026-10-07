@@ -1,0 +1,14 @@
+# Opt-in Telegram notification for SEV-1 pages, SEV-2 alerts and silent SEV-3
+# tickets. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the ignored .env file;
+# Compose passes them to Alertmanager as secret files, not as environment
+# variables, and the rendered configuration only references the file paths.
+services:
+  alertmanager:
+    environment:
+      TELEGRAM_API_URL: ${TELEGRAM_API_URL:-https://api.telegram.org}
+    secrets: [alert_webhook_token, telegram_bot_token, telegram_chat_id]
+secrets:
+  telegram_bot_token:
+    environment: TELEGRAM_BOT_TOKEN
+  telegram_chat_id:
+    environment: TELEGRAM_CHAT_ID

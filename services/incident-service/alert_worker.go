@@ -95,9 +95,7 @@ func pollAlerts(ctx context.Context, client *http.Client, endpoint string, store
 		if a.State != "firing" {
 			continue
 		}
-		switch a.Labels["alertname"] {
-		case "LogExportLoss", "ServiceLatencyHigh", "BusinessSuccessRateLow", "ServiceUnavailable", "NotificationConsumerLag", "EventPublicationDelayed", "KafkaLagMeasurementUnavailable":
-		default:
+		if !ingestible(a.Labels["alertname"]) {
 			continue
 		}
 		item, replay, err := store.IngestAlert(ctx, source, environment, viewer, a)

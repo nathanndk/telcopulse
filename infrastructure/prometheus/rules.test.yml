@@ -14,6 +14,7 @@ tests:
         exp_alerts:
           - exp_labels: {environment: development, severity: SEV-2}
             exp_annotations:
+              runbook_url: docs/runbooks/high-error-rate.md
               summary: Synthetic purchase SLO budget burning in development
               description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
   - interval: 15s
@@ -50,6 +51,7 @@ tests:
         exp_alerts:
           - exp_labels: {environment: staging, severity: SEV-2}
             exp_annotations:
+              runbook_url: docs/runbooks/high-error-rate.md
               summary: Synthetic purchase SLO budget burning in staging
               description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
 
@@ -90,6 +92,7 @@ tests:
         exp_alerts:
           - exp_labels: {environment: development, severity: SEV-2}
             exp_annotations:
+              runbook_url: docs/runbooks/high-error-rate.md
               summary: Synthetic purchase SLO budget burning in development
               description: "30-day 99.9% objective: paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Check terminal sample count and failed transaction IDs in TelcoPulse."
       - eval_time: 40m
@@ -109,6 +112,7 @@ tests:
         exp_alerts:
           - exp_labels: {service: payment-service, severity: SEV-2}
             exp_annotations:
+              runbook_url: docs/runbooks/high-latency.md
               summary: payment-service HTTP P95 exceeds one second
               description: "Shared-runtime HTTP telemetry: at least twenty requests in five minutes. Investigate the affected dependency; customer impact and environment require confirmation."
 
@@ -164,6 +168,7 @@ tests:
         exp_alerts:
           - exp_labels: {service: payment-service, severity: SEV-2}
             exp_annotations:
+              runbook_url: docs/runbooks/high-latency.md
               summary: payment-service HTTP P95 exceeds one second
               description: "Shared-runtime HTTP telemetry: at least twenty requests in five minutes. Investigate the affected dependency; customer impact and environment require confirmation."
       - eval_time: 100s
@@ -181,6 +186,7 @@ tests:
         exp_alerts:
           - exp_labels: {service: payment-service, severity: SEV-3}
             exp_annotations:
+              runbook_url: docs/splunk.md
               summary: payment-service log export lost events
               description: "Failed or dropped exports observed in five minutes. Check receiver availability, token/index permissions and queue pressure; stdout remains the primary log stream."
 
@@ -195,6 +201,7 @@ tests:
         exp_alerts:
           - exp_labels: {service: payment-service, severity: SEV-3}
             exp_annotations:
+              runbook_url: docs/splunk.md
               summary: payment-service log export lost events
               description: "Failed or dropped exports observed in five minutes. Check receiver availability, token/index permissions and queue pressure; stdout remains the primary log stream."
 
@@ -237,3 +244,61 @@ tests:
       - eval_time: 2m
         alertname: BusinessSuccessRateLow
         exp_alerts: []
+
+  - name: watchdog-always-fires
+    interval: 15s
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels: {severity: none}
+            exp_annotations:
+              summary: Alerting pipeline heartbeat
+              description: "Always firing. An external dead-man's switch pages when these notifications stop arriving."
+
+  - name: alertmanager-delivery-failure
+    interval: 15s
+    input_series:
+      - series: 'alertmanager_notifications_failed_total{integration="telegram"}'
+        values: '0+1x20'
+      - series: 'alertmanager_notifications_failed_total{integration="webhook"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: AlertmanagerNotificationsFailing
+        exp_alerts:
+          - exp_labels: {integration: telegram, severity: SEV-2}
+            exp_annotations:
+              summary: Alertmanager telegram deliveries are failing
+              description: "Notifications to this integration failed in the last ten minutes. Incidents or pages may be missing; check Alertmanager logs and receiver credentials."
+              runbook_url: docs/on-call.md
+
+  - name: alertmanager-not-discovered
+    interval: 15s
+    input_series:
+      - series: 'prometheus_notifications_alertmanagers_discovered'
+        values: '0x20'
+      - series: 'prometheus_notifications_errors_total{alertmanager="http://alertmanager:9093/api/v2/alerts"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: AlertmanagerUnreachable
+        exp_alerts:
+          - exp_labels: {severity: SEV-1}
+            exp_annotations:
+              summary: Prometheus cannot deliver alerts to Alertmanager
+              description: "No notification or incident is produced while this fires. Check the Prometheus and Grafana alert views directly and restore Alertmanager."
+              runbook_url: docs/on-call.md
+
+  - name: alertmanager-healthy
+    interval: 15s
+    input_series:
+      - series: 'prometheus_notifications_alertmanagers_discovered'
+        values: '1x20'
+      - series: 'prometheus_notifications_errors_total{alertmanager="http://alertmanager:9093/api/v2/alerts"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: AlertmanagerUnreachable
+        exp_alerts: []
+

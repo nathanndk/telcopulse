@@ -1,0 +1,9 @@
+# Opt-in dead-man's switch: Alertmanager posts the always-firing Watchdog alert
+# every minute to an external check URL (for example a healthchecks.io ping URL)
+# that pages when the posts stop. Set HEARTBEAT_URL in the ignored .env file.
+services:
+  alertmanager:
+    secrets: [alert_webhook_token, heartbeat_url]
+secrets:
+  heartbeat_url:
+    environment: HEARTBEAT_URL

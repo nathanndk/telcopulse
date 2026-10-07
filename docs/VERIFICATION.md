@@ -1,5 +1,12 @@
 # Verification record
 
+## Alertmanager routing, incident push and Telegram paging · 2026-10-07
+
+- Prometheus now delivers alerts to Alertmanager 0.34.1, which posts them to a dedicated incident-service listener (`ALERT_INGESTION=alertmanager`) and routes SEV-1/2/3 to Telegram page, alert and silent-ticket receivers. Go unit tests cover webhook authentication, envelope bounds, skipping of resolved and unknown alerts, idempotent repeats, 503 on storage failure and token separation. `promtool test rules` passes, including new Watchdog and Alertmanager meta-alert cases.
+- `bash tests/ci/alertmanager-config.sh` passed: both rendered variants pass `amtool check-config`, the expected receivers are chosen for each severity, Watchdog and unlabelled alerts, and a running Alertmanager inhibits only the same-service symptom.
+- Live Compose run (`tests/integration/alert_routing.py`, 2 min 18 s): stopping payment-service opened incident `INC-c41fb75d1192201908c5b97c` through the webhook. A local Telegram Bot API mock received a `🔴 PAGE SEV-1 · ServiceUnavailable` message on the expected bot path and chat ID, with the runbook link. A maintenance silence for package-service suppressed both its page and its incident. After restart a `✅ RESOLVED` message arrived and the incident stayed Detected. The existing `alert_incidents.py` regression also passed in push mode.
+- Not verified: delivery to the real api.telegram.org with an operator's bot, an external dead-man's switch, and Alertmanager high availability (one instance, `--cluster.listen-address=` disabled).
+
 ## Environment-scoped Operations inbox · 2026-09-28
 
 - The header opens a keyboard-accessible inbox with the current incident count, up to five prioritized active incidents and five recent incident/simulation/deployment audit events for the selected development or staging environment. Records link to their owning investigation and full registers. The two sources retain independent loading, empty and error states; a failed incident source reports an unknown count rather than zero.

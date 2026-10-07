@@ -10,6 +10,7 @@ import uuid
 
 os.environ.setdefault("WEB_PORT", "3000")
 BASE_URL = "http://localhost:" + os.environ["WEB_PORT"]
+PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
 
 
 def compose(*args):
