@@ -221,7 +221,7 @@ func TestLostPaymentResponse(t *testing.T) {
 		t.Fatalf("pending counted as completed %+v %v", overview, e)
 	}
 	// A new coordinator instance resumes the same durable identity, like a gateway restart.
-	restarted := *s
+	restarted := &Service{Metrics: s.Metrics, Cache: s.Cache, Store: s.Store, Subscriber: s.Subscriber, Package: s.Package, Payment: s.Payment, Log: s.Log}
 	result, _, err := restarted.Purchase(ctx, purchaseInput(), "lost-payment-response")
 	if err != nil || result.Status != "SUCCESS" {
 		t.Fatalf("recovery %+v %v", result, err)
@@ -285,6 +285,49 @@ func TestConcurrentPurchases(t *testing.T) {
 		})
 	}
 }
+
+// More concurrent purchases than workflow slots must queue and finish, not
+// starve the pool: before admission slots, 20 lock holders could each wait for
+// a second connection from the same 20-connection pool.
+func TestBurstBeyondWorkflowSlotsCompletes(t *testing.T) {
+	s := setup(t, nil, nil, nil)
+	const burst = 30
+	var wg sync.WaitGroup
+	keys := make([]string, burst)
+	for i := range burst {
+		keys[i] = fmt.Sprintf("burst-key-%d", i)
+		wg.Add(1)
+		go func(key string) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if _, _, err := s.Purchase(ctx, purchaseInput(), key); err != nil && !errors.Is(err, ErrPending) {
+				t.Error(key, err)
+			}
+		}(keys[i])
+	}
+	wg.Wait()
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		var processing int
+		if err := s.Pool.QueryRow(context.Background(), "SELECT count(*) FROM purchase_workflows WHERE idempotency_key LIKE 'burst-key-%' AND state='PROCESSING'").Scan(&processing); err != nil {
+			t.Fatal(err)
+		}
+		if processing == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d burst purchases still processing", processing)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		s.recoverBatch(ctx)
+		cancel()
+	}
+	if s.InFlight() != 0 {
+		t.Fatalf("slots leaked: %d in flight", s.InFlight())
+	}
+}
+
 func TestNotificationOutboxRecovery(t *testing.T) {
 	s := setup(t, nil, nil, nil)
 	ctx := context.Background()

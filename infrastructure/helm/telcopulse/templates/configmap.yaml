@@ -39,6 +39,7 @@ data:
   KAFKA_BROKERS: {{ $.Values.runtime.kafkaBrokers | quote }}
   PROMETHEUS_URL: {{ $.Values.runtime.prometheusURL | quote }}
   PURCHASES_PER_MINUTE: {{ $.Values.runtime.purchasesPerMinute | quote }}
+  DATABASE_MAX_CONNS: {{ $.Values.capacity.gatewayDatabaseMaxConns | quote }}
   {{- else if eq $name "incident-service" }}
   ALERT_INGESTION: {{ $.Values.alerting.ingestion | quote }}
   {{- if eq $.Values.alerting.ingestion "alertmanager" }}

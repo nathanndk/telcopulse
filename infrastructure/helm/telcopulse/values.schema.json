@@ -46,6 +46,15 @@
         "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
       }
     },
+    "capacity": {
+      "type": "object",
+      "required": ["gatewayDatabaseMaxConns", "databaseMaxConnections", "reservedConnections"],
+      "properties": {
+        "gatewayDatabaseMaxConns": { "type": "integer", "minimum": 4, "maximum": 100 },
+        "databaseMaxConnections": { "type": "integer", "minimum": 20 },
+        "reservedConnections": { "type": "integer", "minimum": 0 }
+      }
+    },
     "backup": {
       "type": "object",
       "properties": {

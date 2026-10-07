@@ -1,5 +1,11 @@
 # Verification record
 
+## Capacity test, gateway pool deadlock fix and connection budget · 2026-10-07
+
+- `tests/load/capacity.py` found the purchase path failing at 20 purchases/s with idle CPU: 391 of 900 purchases stuck in Processing and the gateway pool at 10/10. `pg_stat_activity` showed workflow lock transactions idle while waiting for a second pooled connection, a pool self-deadlock. Workflow admission slots (half the pool) and a 20-connection gateway pool fixed it. `TestBurstBeyondWorkflowSlotsCompletes` passes with the slots and times out when they are disabled. Gateway unit, race and PostgreSQL integration tests pass.
+- After the fix: 5, 10 and 20 purchases/s are healthy (20/s: 900/900, p95 38 ms). 40/s breaches (p95 3.2 s, 1,744/1,800 completed) at about 640 PostgreSQL commits/s against a disk measured at 260–790 `fdatasync`/s. CPU stayed below 0.3 cores per service. An earlier run during post-reboot swapping (load average 140) was discarded, and the test now waits for a calm host.
+- The chart now refuses releases whose gateway replicas × pool plus service pools exceed `max_connections`. It rejected the old production-like profile; `scripts/verify-helm.sh` covers the rejection. Numbers depend on this WSL2 workstation's disk and memory pressure.
+
 ## Backups, restore drill and database-loss game day · 2026-10-07
 
 - `postgres-backup` writes hourly snapshot-consistent dumps with SHA-256 and row-count manifests (first run: 176,728 bytes, 34 tables, 1 s). node-exporter's textfile collector exposes its metrics to Prometheus. `promtool test rules` covers the stale, failing and missing backup alerts.

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"log/slog"
 	"net/http"
 	"os"
@@ -105,6 +106,10 @@ func run(log *slog.Logger, exporter *logexport.Queue) error {
 	paymentClient := rpc.New(os.Getenv("PAYMENT_URL"), token)
 	paymentClient.HTTP.Timeout = 6 * time.Second
 	flow := &workflow.Service{Metrics: metrics, Store: db, Cache: cache, Subscriber: rpc.New(os.Getenv("SUBSCRIBER_URL"), token), Package: rpc.New(os.Getenv("PACKAGE_URL"), token), Payment: paymentClient, Log: log}
+	prometheus.WrapRegistererWith(prometheus.Labels{"service": "api-gateway"}, metrics.Registry).MustRegister(
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "purchase_workflows_in_flight", Help: "Purchase workflow executions running now; capped at half the database pool."}, func() float64 { return float64(flow.InFlight()) }),
+		prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "purchase_workflow_deferred_total", Help: "Purchase requests answered as Processing because no workflow slot freed within the wait."}, func() float64 { return float64(flow.Deferred()) }),
+	)
 	brokers := os.Getenv("KAFKA_BROKERS")
 	if brokers == "" {
 		brokers = "127.0.0.1:19092"

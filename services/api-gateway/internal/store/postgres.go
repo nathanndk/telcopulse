@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"strconv"
 	"telcopulse/services/shared/telemetry"
 	"time"
 
@@ -35,7 +37,17 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		return nil, fmt.Errorf("database config: %w", err)
 	}
 	cfg.ConnConfig.Tracer = telemetry.DatabaseTracer{}
-	cfg.MaxConns = 10
+	// Half the pool may run purchase workflows (see workflow.acquireSlot); the
+	// rest serves reads, recovery scans and the outbox relay. Replicas multiply
+	// it, so the Helm chart checks the total against PostgreSQL max_connections.
+	cfg.MaxConns = 20
+	if value := os.Getenv("DATABASE_MAX_CONNS"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 4 || n > 100 {
+			return nil, fmt.Errorf("DATABASE_MAX_CONNS must be between 4 and 100")
+		}
+		cfg.MaxConns = int32(n)
+	}
 	cfg.MinConns = 1
 	cfg.MaxConnLifetime = time.Hour
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)

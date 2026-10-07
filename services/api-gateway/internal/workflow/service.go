@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -38,7 +40,40 @@ type Service struct {
 	*store.Store
 	Subscriber, Package, Payment *rpc.Client
 	Log                          *slog.Logger
+
+	slotsOnce sync.Once
+	slots     chan struct{}
+	deferred  atomic.Int64
 }
+
+// slotWait bounds how long a request waits to start its workflow before it is
+// answered as Processing and left to background recovery.
+const slotWait = 3 * time.Second
+
+// acquireSlot admits a workflow execution. Each running workflow holds its lock
+// transaction and needs a second pooled connection to save progress, so at most
+// half the pool may run at once; otherwise a burst can fill the pool with lock
+// holders that all wait for a connection none of them will release.
+func (s *Service) acquireSlot(ctx context.Context) (func(), bool) {
+	s.slotsOnce.Do(func() {
+		s.slots = make(chan struct{}, max(int(s.Pool.Config().MaxConns)/2, 1))
+	})
+	timer := time.NewTimer(slotWait)
+	defer timer.Stop()
+	select {
+	case s.slots <- struct{}{}:
+		return func() { <-s.slots }, true
+	case <-timer.C:
+	case <-ctx.Done():
+	}
+	s.deferred.Add(1)
+	return nil, false
+}
+
+// InFlight reports running workflow executions; Deferred counts requests that
+// found no free slot and were left to recovery.
+func (s *Service) InFlight() int   { return len(s.slots) }
+func (s *Service) Deferred() int64 { return s.deferred.Load() }
 
 // Customers aggregates subscriber-owned identity and payment-owned balances.
 func (s *Service) Customers(ctx context.Context) ([]domain.Customer, error) {
@@ -185,6 +220,11 @@ func (s *Service) Purchase(ctx context.Context, p domain.Purchase, key string) (
 }
 func (s *Service) resume(ctx context.Context, key string) (domain.Transaction, error) {
 	var result domain.Transaction
+	release, admitted := s.acquireSlot(ctx)
+	if !admitted {
+		return s.pending(ctx, key)
+	}
+	defer release()
 	lock, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return result, err
@@ -201,15 +241,7 @@ func (s *Service) resume(ctx context.Context, key string) (domain.Transaction, e
 		return result, err
 	}
 	if !acquired {
-		var pending []byte
-		if err = s.Pool.QueryRow(ctx, "SELECT result FROM purchase_workflows WHERE idempotency_key=$1", key).Scan(&pending); err != nil {
-			return result, err
-		}
-		if err = json.Unmarshal(pending, &result); err != nil {
-			return result, err
-		}
-		result.Status = "PROCESSING"
-		return result, ErrPending
+		return s.pending(ctx, key)
 	}
 	var data, request, operation []byte
 	var state, origin string
@@ -246,6 +278,22 @@ func (s *Service) resume(ctx context.Context, key string) (domain.Transaction, e
 	}
 	return result, nil
 }
+
+// pending returns the stored workflow as Processing for a request that cannot
+// run it now; another attempt or background recovery completes it.
+func (s *Service) pending(ctx context.Context, key string) (domain.Transaction, error) {
+	var result domain.Transaction
+	var stored []byte
+	if err := s.Pool.QueryRow(ctx, "SELECT result FROM purchase_workflows WHERE idempotency_key=$1", key).Scan(&stored); err != nil {
+		return result, err
+	}
+	if err := json.Unmarshal(stored, &result); err != nil {
+		return result, err
+	}
+	result.Status = "PROCESSING"
+	return result, ErrPending
+}
+
 func (s *Service) save(ctx context.Context, key string, result domain.Transaction, op domain.Operation) error {
 	data, err := json.Marshal(result)
 	if err != nil {

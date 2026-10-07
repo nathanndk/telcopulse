@@ -144,3 +144,13 @@ backup:
   size: 2Gi
   storageClassName: ""
   image: postgres:17-alpine
+
+# Capacity guardrails from docs/capacity.md. The chart refuses to render when the
+# largest gateway replica count times its pool, plus 8 connections per other Go
+# service pod and the reserve, exceeds the database's max_connections.
+capacity:
+  # Two staging replicas x 12 + 64 + 10 = 98. Compose runs one gateway with 20.
+  gatewayDatabaseMaxConns: 12
+  databaseMaxConnections: 100
+  # Backup and migration jobs, exporters and operator sessions.
+  reservedConnections: 10

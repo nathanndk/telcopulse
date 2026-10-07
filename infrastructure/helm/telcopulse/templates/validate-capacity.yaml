@@ -1,0 +1,25 @@
+{{- /*
+PostgreSQL connection budget (docs/capacity.md): every Go service pool holds up
+to 8 connections, the gateway capacity.gatewayDatabaseMaxConns per replica, and
+backup/migration jobs and exporters need headroom. Scaling the gateway beyond the
+budget fails with connection errors under load, so refuse to render it.
+*/ -}}
+{{- $c := .Values.capacity -}}
+{{- $gateway := (index .Values.services "api-gateway").replicas -}}
+{{- if and .Values.autoscaling.enabled (gt (int .Values.autoscaling.maxReplicas) (int $gateway)) -}}
+{{- $gateway = .Values.autoscaling.maxReplicas -}}
+{{- end -}}
+{{- $rollouts := .Values.rollouts | default dict -}}
+{{- if and $rollouts.enabled (has "api-gateway" $rollouts.services) -}}
+{{- $gateway = add $gateway 1 -}}
+{{- end -}}
+{{- $others := 0 -}}
+{{- range $name, $service := .Values.services -}}
+{{- if and (ne $name "api-gateway") (ne $name "web") -}}
+{{- $others = add $others (mul (int $service.replicas) 8) -}}
+{{- end -}}
+{{- end -}}
+{{- $needed := add (mul (int $gateway) (int $c.gatewayDatabaseMaxConns)) $others (int $c.reservedConnections) -}}
+{{- if gt (int $needed) (int $c.databaseMaxConnections) -}}
+{{- fail (printf "PostgreSQL connection budget exceeded: %d gateway pods x %d + %d service connections + %d reserved = %d > capacity.databaseMaxConnections %d; lower capacity.gatewayDatabaseMaxConns or the replica ceiling, or add a pooler" (int $gateway) (int $c.gatewayDatabaseMaxConns) (int $others) (int $c.reservedConnections) (int $needed) (int $c.databaseMaxConnections)) -}}
+{{- end -}}

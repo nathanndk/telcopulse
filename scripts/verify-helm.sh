@@ -81,6 +81,14 @@ for invalid in \
   fi
 done
 
+# Capacity guardrail: production-like autoscaling with the Compose-sized gateway
+# pool would exhaust PostgreSQL connections, and the kind profile must render.
+if tar -C "$chart_root" -cf - telcopulse | docker run --rm -i --entrypoint sh "$helm_image" -c \
+  'mkdir /chart && tar -xf - -C /chart && helm template telcopulse /chart/telcopulse -f /chart/telcopulse/values-production.yaml --set capacity.gatewayDatabaseMaxConns=20' \
+  > /dev/null 2> "$render_dir/invalid.log"; then
+  echo 'expected Helm to reject a connection budget above max_connections' >&2
+  exit 1
+fi
 for example in namespace.example.yaml runtime-secret.example.yaml; do
   printf '%s: ' "$example"
   docker run --rm -i "$schema_image" -summary -strict -kubernetes-version 1.34.0 \

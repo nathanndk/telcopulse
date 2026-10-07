@@ -13,9 +13,18 @@ ingress:
 services:
   api-gateway:
     replicas: 2
+    # Measured ~7.5 millicores per purchase/s (docs/capacity.md): at the 70% HPA
+    # target a pod scales out near 19 purchases/s instead of at 9.
+    resources:
+      requests: {cpu: 200m, memory: 128Mi}
+      limits: {cpu: "1", memory: 512Mi}
   web:
     replicas: 2
 autoscaling:
   enabled: true
+# Five gateway replicas x 6 + 64 service connections + 10 reserved = 104 would
+# exceed 100; 5 x 5 = 99 fits. Each pod still runs 2 workflows at once.
+capacity:
+  gatewayDatabaseMaxConns: 5
 pdb:
   enabled: true
