@@ -1,5 +1,6 @@
 rule_files:
   - rules.yml
+  - slo-rules.yml
 evaluation_interval: 5s
 tests:
   - interval: 15s
@@ -302,3 +303,72 @@ tests:
         alertname: AlertmanagerUnreachable
         exp_alerts: []
 
+  - name: latency-budget-fast-burn
+    interval: 15s
+    input_series:
+      - series: 'transaction_duration_seconds_bucket{environment="staging",le="2.0"}'
+        values: '0+7x24'
+      - series: 'transaction_duration_seconds_count{environment="staging"}'
+        values: '0+10x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PurchaseLatencyBudgetBurn
+        exp_alerts:
+          - exp_labels: {environment: staging, service: api-gateway, severity: SEV-2}
+            exp_annotations:
+              runbook_url: docs/runbooks/high-latency.md
+              summary: Synthetic purchase latency SLO budget burning in staging
+              description: "30-day objective: 99% of completed purchases within 2 s. Paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Compare per-service P95 to find the slow dependency."
+
+  - name: latency-budget-within-objective
+    interval: 15s
+    input_series:
+      - series: 'transaction_duration_seconds_bucket{environment="staging",le="2"}'
+        values: '0+19x24'
+      - series: 'transaction_duration_seconds_count{environment="staging"}'
+        values: '0+20x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PurchaseLatencyBudgetBurn
+        exp_alerts: []
+
+  - name: latency-budget-sparse
+    interval: 15s
+    input_series:
+      - series: 'transaction_duration_seconds_bucket{environment="development",le="2"}'
+        values: '0+0x24'
+      - series: 'transaction_duration_seconds_count{environment="development"}'
+        values: '0+0.1x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PurchaseLatencyBudgetBurn
+        exp_alerts: []
+
+  - name: freshness-budget-fast-burn
+    interval: 15s
+    input_series:
+      - series: 'notification_delivery_freshness_seconds_bucket{environment="development",le="30.0"}'
+        values: '0+5x24'
+      - series: 'notification_delivery_freshness_seconds_count{environment="development"}'
+        values: '0+10x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NotificationFreshnessBudgetBurn
+        exp_alerts:
+          - exp_labels: {environment: development, service: notification-service, severity: SEV-2}
+            exp_annotations:
+              runbook_url: docs/runbooks/kafka-consumer-lag.md
+              summary: Notification freshness SLO budget burning in development
+              description: "30-day objective: 99% of notifications delivered within 30 s of the purchase outcome. Paired 5m/1h burn exceeds 14.4x, or 30m/6h burn exceeds 6x. Undelivered events are not counted until delivered; check consumer lag and outbox age."
+
+  - name: freshness-budget-healthy
+    interval: 15s
+    input_series:
+      - series: 'notification_delivery_freshness_seconds_bucket{environment="development",le="30"}'
+        values: '0+10x24'
+      - series: 'notification_delivery_freshness_seconds_count{environment="development"}'
+        values: '0+10x24'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NotificationFreshnessBudgetBurn
+        exp_alerts: []

@@ -64,7 +64,7 @@ func Replay(ctx context.Context, pool *pgxpool.Pool, partition int32, offset int
 	if _, err = tx.Exec(ctx, `SAVEPOINT replay_delivery`); err != nil {
 		return result, false, err
 	}
-	transactionID, created, deliverErr := deliverInto(ctx, tx, payload)
+	delivered, created, deliverErr := deliverInto(ctx, tx, payload)
 	var invalid *invalidEvent
 	if errors.As(deliverErr, &invalid) {
 		if _, err = tx.Exec(ctx, `ROLLBACK TO SAVEPOINT replay_delivery`); err != nil {
@@ -74,7 +74,7 @@ func Replay(ctx context.Context, pool *pgxpool.Pool, partition int32, offset int
 	} else if deliverErr != nil {
 		return result, false, deliverErr
 	} else {
-		result.TransactionID = transactionID
+		result.TransactionID = delivered.Operation.TransactionID
 		result.Status = "ALREADY_DELIVERED"
 		if created {
 			result.Status = "DELIVERED"

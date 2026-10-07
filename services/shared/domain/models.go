@@ -114,6 +114,8 @@ type Overview struct {
 	PerMinute        int         `json:"per_minute"`
 	Series           []Point     `json:"series"`
 	PurchaseSLO      PurchaseSLO `json:"purchase_slo"`
+	// PurchaseLatencySLO shares PurchaseSLO's durable 30-day window.
+	PurchaseLatencySLO PurchaseLatencySLO `json:"purchase_latency_slo"`
 }
 
 // NewID generates cryptographically random correlation identifiers.

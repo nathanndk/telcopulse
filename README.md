@@ -8,7 +8,7 @@ The Compose stack includes a Next.js console, a Go gateway and independent auth,
 
 Available pages include ITOC Overview, Services, Incidents, RCA & Actions, RCA reports, Transactions, Deployments, Audit Log, Customer Simulator and Settings, plus investigation details. The header Operations inbox shows environment-scoped active incidents and recent recorded changes with links to their source records. The UI uses measured business data, live Prometheus service telemetry and persisted incident/deployment evidence, with explicit empty and error states. HTTP health has shared-runtime scope across transaction environments; see [service health semantics](docs/service-health.md).
 
-The overview also shows a [rolling 30-day synthetic purchase SLO and error budget](docs/slo.md) from durable transaction outcomes.
+The overview also shows rolling 30-day [purchase success and purchase latency SLOs with error budgets](docs/slo.md) from durable transaction outcomes. Those two SLOs and a notification freshness SLO are defined as code with Sloth, alert on multiwindow burn rates, and feed an [error budget policy](docs/error-budget-policy.md) whose gate blocks Jenkins promotions while a budget burns.
 It also reports [30-day operational response metrics](docs/operational-metrics.md) from incident audit and deployment event records, with sample counts and explicit no-data states.
 Failed synthetic purchases can be [replayed as linked new attempts](docs/transaction-replay.md) from the simulator or transaction investigation page.
 

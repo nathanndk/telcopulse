@@ -10,7 +10,7 @@ Prometheus rules ──► Alertmanager ──┬─► incident-service webhook
                                     └─► external heartbeat  (Watchdog only, optional)
 ```
 
-[Alertmanager](../infrastructure/alertmanager/alertmanager.yml) groups by `alertname`, `environment` and `service`. Every alert is sent first to incident-service on a dedicated listener (`:9094/alertmanager`) authenticated by `ALERT_WEBHOOK_TOKEN`. This token can only open detections; it cannot read or edit incidents, and it is separate from `SERVICE_TOKEN`. Incident-service opens incidents for the [seven application rules](incidents.md#automatic-alert-detection). Other rules, such as infrastructure dependency signals, notify people without creating an incident, because the affected application service still needs triage. Human routing then continues by severity:
+[Alertmanager](../infrastructure/alertmanager/alertmanager.yml) groups by `alertname`, `environment` and `service`. Every alert is sent first to incident-service on a dedicated listener (`:9094/alertmanager`) authenticated by `ALERT_WEBHOOK_TOKEN`. This token can only open detections; it cannot read or edit incidents, and it is separate from `SERVICE_TOKEN`. Incident-service opens incidents for the [nine application rules](incidents.md#automatic-alert-detection). Other rules, such as infrastructure dependency signals, notify people without creating an incident, because the affected application service still needs triage. Human routing then continues by severity:
 
 | Severity | Meaning | Receiver | Group wait / repeat | Acknowledge within | Engage |
 | --- | --- | --- | --- | --- | --- |

@@ -1,6 +1,6 @@
 {
   "uid": "telcopulse-operations",
-  "title": "TelcoPulse \u00b7 Operations",
+  "title": "TelcoPulse · Operations",
   "schemaVersion": 41,
   "version": 1,
   "tags": [
@@ -493,26 +493,55 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "telcopulse:business_failure_ratio:increase5m / 0.001",
+          "expr": "slo:sli_error:ratio_rate5m{sloth_slo=\"purchase-success\"} / 0.001",
           "legendFormat": "{{environment}} · 5m"
         },
         {
           "refId": "B",
-          "expr": "telcopulse:business_failure_ratio:increase1h / 0.001",
+          "expr": "slo:sli_error:ratio_rate1h{sloth_slo=\"purchase-success\"} / 0.001",
           "legendFormat": "{{environment}} · 1h"
         }
       ],
-      "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "min": 0,
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 14.4}]},
-          "custom": {"thresholdsStyle": {"mode": "line"}}
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
         },
         "overrides": []
       },
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     },
     {
       "id": 14,
@@ -526,26 +555,177 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "telcopulse:business_failure_ratio:increase30m / 0.001",
+          "expr": "slo:sli_error:ratio_rate30m{sloth_slo=\"purchase-success\"} / 0.001",
           "legendFormat": "{{environment}} · 30m"
         },
         {
           "refId": "B",
-          "expr": "telcopulse:business_failure_ratio:increase6h / 0.001",
+          "expr": "slo:sli_error:ratio_rate6h{sloth_slo=\"purchase-success\"} / 0.001",
           "legendFormat": "{{environment}} · 6h"
         }
       ],
-      "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "min": 0,
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 6}]},
-          "custom": {"thresholdsStyle": {"mode": "line"}}
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
         },
         "overrides": []
       },
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Latency and freshness SLO · fast burn",
+      "type": "timeseries",
+      "description": "99% objectives: purchases complete within 2 s; notifications are delivered within 30 s of the outcome. The alert needs both 5m and 1h burn above 14.4×, plus a traffic floor.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "telcopulse-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "slo:sli_error:ratio_rate5m{sloth_slo=~\"purchase-latency|notification-freshness\"} / 0.01",
+          "legendFormat": "{{sloth_slo}} · {{environment}} · 5m"
+        },
+        {
+          "refId": "B",
+          "expr": "slo:sli_error:ratio_rate1h{sloth_slo=~\"purchase-latency|notification-freshness\"} / 0.01",
+          "legendFormat": "{{sloth_slo}} · {{environment}} · 1h"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "SLO error budget remaining (retained window)",
+      "type": "timeseries",
+      "description": "Sloth period budget over the samples Prometheus still retains (two days locally), not the full 30 days. The ITOC Overview shows the durable 30-day purchase success and latency budgets from PostgreSQL.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "telcopulse-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * slo:period_error_budget_remaining:ratio",
+          "legendFormat": "{{sloth_slo}} · {{environment}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 25
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ]
 }

@@ -70,8 +70,11 @@ func alertCommand(source, environment, viewer string, a AlertObservation) (Creat
 	service := a.Labels["service"]
 	severity := "SEV-2"
 	switch a.Labels["alertname"] {
-	case "BusinessSuccessRateLow":
+	case "BusinessSuccessRateLow", "PurchaseLatencyBudgetBurn":
 		service = "api-gateway"
+		environment = a.Labels["environment"]
+	case "NotificationFreshnessBudgetBurn":
+		service = "notification-service"
 		environment = a.Labels["environment"]
 	case "ServiceUnavailable":
 		severity = "SEV-1"
@@ -103,6 +106,12 @@ func alertCommand(source, environment, viewer string, a AlertObservation) (Creat
 	evidence := Evidence{Kind: "metric", Summary: fmt.Sprintf("Prometheus %s firing since %s; episode %s", a.Labels["alertname"], a.ActiveAt.UTC().Format(time.RFC3339), key)}
 	if a.Labels["alertname"] == "BusinessSuccessRateLow" {
 		evidence.Summary += "; synthetic purchase failure budget burn exceeded the paired 5m/1h or 30m/6h threshold for the 99.9% objective. Prometheus observes process-local terminal outcomes; verify the durable SLO and customer impact before escalation."
+	}
+	if a.Labels["alertname"] == "PurchaseLatencyBudgetBurn" {
+		evidence.Summary += "; synthetic purchase latency budget burn exceeded the paired 5m/1h or 30m/6h threshold for the 99%-within-2s objective. Durations include recovery; compare per-service P95 and the durable latency SLO before escalation."
+	}
+	if a.Labels["alertname"] == "NotificationFreshnessBudgetBurn" {
+		evidence.Summary += "; notification freshness budget burn exceeded the paired 5m/1h or 30m/6h threshold for the 99%-within-30s objective. Only delivered notifications are measured; check consumer lag and outbox age for events still waiting."
 	}
 	if a.Labels["alertname"] == "ServiceLatencyHigh" {
 		evidence.Summary += "; shared-runtime HTTP P95 above one second for thirty seconds, with at least twenty requests in five minutes. Incident environment is the configured routing scope, not measured customer impact."

@@ -85,6 +85,18 @@ export const overviewSchema = z.object({
     budget_remaining: z.number(),
     budget_consumed_percent: z.number().nullable(),
   }),
+  purchase_latency_slo: z.object({
+    window_start: z.string(),
+    window_end: z.string(),
+    target_percent: z.number(),
+    threshold_ms: z.number(),
+    total: z.number(),
+    slow: z.number(),
+    current_percent: z.number().nullable(),
+    allowed_slow: z.number(),
+    budget_remaining: z.number(),
+    budget_consumed_percent: z.number().nullable(),
+  }),
   series: z.array(
     z.object({
       time: z.string(),

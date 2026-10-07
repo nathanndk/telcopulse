@@ -98,7 +98,7 @@ def main():
         "six technical failures in Prometheus",
     )
     wait_for(
-        lambda: (rows := query('telcopulse:business_failure_ratio:increase5m{environment="development"}')) and float(rows[0]["value"][1]) > 0.0144,
+        lambda: (rows := query('slo:sli_error:ratio_rate5m{sloth_slo="purchase-success",environment="development"}')) and float(rows[0]["value"][1]) > 0.0144,
         "fast-window budget burn",
     )
     wait_for(

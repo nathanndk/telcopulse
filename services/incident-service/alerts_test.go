@@ -106,3 +106,20 @@ func TestDeploymentServiceLogExportLossScope(t *testing.T) {
 		t.Fatalf("deployment log-export alert lost: %+v, %v", input, err)
 	}
 }
+
+func TestSLOBurnAlertScopes(t *testing.T) {
+	for name, service := range map[string]string{"PurchaseLatencyBudgetBurn": "api-gateway", "NotificationFreshnessBudgetBurn": "notification-service"} {
+		a := AlertObservation{State: "firing", ActiveAt: time.Now().Add(-time.Minute), Labels: map[string]string{"alertname": name, "environment": "staging", "service": service, "severity": "SEV-2"}}
+		input, _, err := alertCommand("primary", "development", "", a)
+		if err != nil || input.Service != service || input.Environment != "staging" || input.Severity != "SEV-2" || !strings.Contains(input.Evidence[0].Summary, "budget burn") {
+			t.Fatalf("%s scope: %+v %v", name, input, err)
+		}
+		if !ingestible(name) {
+			t.Fatalf("%s not ingested", name)
+		}
+		a.Labels["environment"] = "production"
+		if _, _, err := alertCommand("primary", "development", "", a); err == nil {
+			t.Fatalf("%s accepted unsupported environment", name)
+		}
+	}
+}

@@ -39,7 +39,7 @@ import { Badge } from "./ui/badge";
 import { TransactionTable } from "./transaction-table";
 import { ServiceHealth } from "./service-health";
 import { DeadLetterRegister } from "./dead-letter-register";
-import { PurchaseSLO } from "./purchase-slo";
+import { PurchaseLatencySLO, PurchaseSLO } from "./purchase-slo";
 import { OperationalMetrics } from "./operational-metrics";
 function Trend({
   overview,
@@ -260,6 +260,7 @@ export function Dashboard() {
           </div>
           <ActiveIncidents environment={environment} />
           <PurchaseSLO slo={query.data.purchase_slo} />
+          <PurchaseLatencySLO slo={query.data.purchase_latency_slo} />
           <OperationalMetrics environment={environment} />
           <div className="dashboard-grid">
             <Panel

@@ -19,7 +19,7 @@ import (
 // ingestedAlerts are the rule names that open incidents. Other routed alerts,
 // such as infrastructure dependency signals, notify humans without guessing an
 // affected application service.
-var ingestedAlerts = []string{"LogExportLoss", "ServiceLatencyHigh", "BusinessSuccessRateLow", "ServiceUnavailable", "NotificationConsumerLag", "EventPublicationDelayed", "KafkaLagMeasurementUnavailable"}
+var ingestedAlerts = []string{"LogExportLoss", "ServiceLatencyHigh", "BusinessSuccessRateLow", "PurchaseLatencyBudgetBurn", "NotificationFreshnessBudgetBurn", "ServiceUnavailable", "NotificationConsumerLag", "EventPublicationDelayed", "KafkaLagMeasurementUnavailable"}
 
 func ingestible(name string) bool { return slices.Contains(ingestedAlerts, name) }
 

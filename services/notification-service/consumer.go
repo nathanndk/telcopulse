@@ -16,6 +16,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel/codes"
 	"telcopulse/services/shared/events"
+	"telcopulse/services/shared/telemetry"
 )
 
 type invalidEvent struct{ reason string }
@@ -36,52 +37,58 @@ func Deliver(ctx context.Context, pool *pgxpool.Pool, payload []byte) error {
 			slog.Error("release notification transaction", "error", e)
 		}
 	}()
-	_, _, err = deliverInto(ctx, tx, payload)
+	event, first, err := deliverInto(ctx, tx, payload)
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if first {
+		telemetry.NotificationDelivered(event.Operation.Environment, time.Since(event.OccurredAt).Seconds())
+	}
+	return nil
 }
 
 // deliverInto lets operator reprocessing commit delivery and audit in one transaction.
-func deliverInto(ctx context.Context, tx pgx.Tx, payload []byte) (string, bool, error) {
+func deliverInto(ctx context.Context, tx pgx.Tx, payload []byte) (events.PurchaseCompleted, bool, error) {
 	var e events.PurchaseCompleted
 	d := json.NewDecoder(bytes.NewReader(payload))
 	d.DisallowUnknownFields()
 	if len(payload) > 16384 || d.Decode(&e) != nil || d.Decode(&struct{}{}) != io.EOF || e.Validate() != nil {
-		return "", false, &invalidEvent{"invalid purchase event"}
+		return e, false, &invalidEvent{"invalid purchase event"}
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO notification.inbox(event_id,payload) VALUES($1,$2) ON CONFLICT DO NOTHING`, e.ID, payload)
 	if err != nil {
-		return "", false, err
+		return e, false, err
 	}
 	var same bool
 	if err = tx.QueryRow(ctx, `SELECT payload=$2::jsonb FROM notification.inbox WHERE event_id=$1`, e.ID, payload).Scan(&same); err != nil {
-		return "", false, err
+		return e, false, err
 	}
 	if !same {
-		return "", false, &invalidEvent{"event identity conflict"}
+		return e, false, &invalidEvent{"event identity conflict"}
 	}
 	op, err := json.Marshal(e.Operation)
 	if err != nil {
-		return "", false, err
+		return e, false, err
 	}
 	delivery, err := tx.Exec(ctx, `INSERT INTO notification.deliveries(transaction_id,request) VALUES($1,$2) ON CONFLICT DO NOTHING`, e.Operation.TransactionID, op)
 	if err != nil {
-		return "", false, err
+		return e, false, err
 	}
 	if err = tx.QueryRow(ctx, `SELECT request=$2::jsonb FROM notification.deliveries WHERE transaction_id=$1`, e.Operation.TransactionID, op).Scan(&same); err != nil {
-		return "", false, err
+		return e, false, err
 	}
 	if !same {
-		return "", false, &invalidEvent{"notification identity conflict"}
+		return e, false, &invalidEvent{"notification identity conflict"}
 	}
 	if delivery.RowsAffected() == 1 {
 		if err = events.EnqueueDelivery(ctx, tx, e); err != nil {
-			return "", false, err
+			return e, false, err
 		}
 	}
-	return e.Operation.TransactionID, delivery.RowsAffected() == 1, nil
+	return e, delivery.RowsAffected() == 1, nil
 }
 
 // Process retains poison records before allowing offset acknowledgment. Transient

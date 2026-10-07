@@ -10,8 +10,18 @@ pipeline {
     choice(name: 'TARGET', choices: ['DEV', 'STAGING', 'PRODUCTION_LIKE'], description: 'PRODUCTION_LIKE is an isolated evaluation target, not a production service')
     string(name: 'IMAGE_SHA', defaultValue: '', description: 'Full 40-character Git commit SHA for DEPLOY')
     string(name: 'ROLLBACK_REVISION', defaultValue: '', description: 'Existing positive Helm revision for ROLLBACK')
+    string(name: 'BUDGET_OVERRIDE_REASON', defaultValue: '', description: 'Only to ship a reliability fix while the error budget gate blocks DEPLOY: one line naming the incident or fix (docs/error-budget-policy.md)')
   }
   stages {
+    stage('Error budget gate') {
+      when { expression { params.ACTION == 'DEPLOY' } }
+      steps {
+        // Rollbacks and smoke checks are never gated: they are the remedy.
+        withEnv(["SLO_PROMETHEUS_URL=${env.getProperty('SLO_PROMETHEUS_URL_' + params.TARGET) ?: ''}"]) {
+          sh 'bash scripts/error-budget-gate.sh'
+        }
+      }
+    }
     stage('Preflight image set') {
       when { expression { params.ACTION == 'DEPLOY' } }
       steps {
@@ -51,6 +61,10 @@ pipeline {
     stage('Deploy') {
       when { expression { params.ACTION == 'DEPLOY' } }
       steps {
+        // Re-check after approval: the budget can burn while the change waits.
+        withEnv(["SLO_PROMETHEUS_URL=${env.getProperty('SLO_PROMETHEUS_URL_' + params.TARGET) ?: ''}"]) {
+          sh 'bash scripts/error-budget-gate.sh'
+        }
         withCredentials([
           file(credentialsId: 'telcopulse-evaluation-kubeconfig', variable: 'KUBECONFIG'),
           usernamePassword(credentialsId: 'telcopulse-registry-read', usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_PASSWORD')

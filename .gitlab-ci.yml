@@ -71,6 +71,50 @@ helm-render:
     paths:
       - telcopulse-*.tgz
 
+# Monitoring configuration is code: generated SLO rules must be current, rule
+# fixtures must pass, and the Alertmanager routing/gate contracts must hold.
+slo-rules-current:
+  stage: verify
+  image: alpine:3.22
+  variables:
+    SLOTH_VERSION: v0.16.0
+  script:
+    - wget -q -O /usr/local/bin/sloth "https://github.com/slok/sloth/releases/download/${SLOTH_VERSION}/sloth-linux-amd64"
+    - chmod +x /usr/local/bin/sloth
+    - sloth generate --no-log --disable-alerts -i infrastructure/slo/telcopulse.yml > /tmp/slo-rules.yml
+    - diff -u infrastructure/prometheus/slo-rules.yml /tmp/slo-rules.yml
+
+prometheus-rules:
+  stage: verify
+  image:
+    name: prom/prometheus:v3.13.3
+    entrypoint: [""]
+  script:
+    - cd infrastructure/prometheus
+    - promtool check rules rules.yml slo-rules.yml
+    - promtool test rules rules.test.yml
+
+alertmanager-config:
+  stage: verify
+  image:
+    name: prom/alertmanager:v0.34.1
+    entrypoint: [""]
+  script:
+    - mkdir -p /tmp/secrets && for name in alert_webhook_token telegram_bot_token telegram_chat_id heartbeat_url; do echo 123456789 > "/tmp/secrets/$name"; done
+    - sed 's#/run/secrets/#/tmp/secrets/#g; s#^exec /bin/alertmanager.*#exit 0#; s#/etc/alertmanager/alertmanager.yml#infrastructure/alertmanager/alertmanager.yml#' infrastructure/alertmanager/entrypoint.sh > /tmp/render.sh
+    - sh /tmp/render.sh
+    - sed -i 's#/run/secrets/#/tmp/secrets/#g; s#/etc/alertmanager/telcopulse.tmpl#infrastructure/alertmanager/telcopulse.tmpl#' /tmp/alertmanager.yml
+    - amtool check-config /tmp/alertmanager.yml
+    - amtool config routes test --config.file=/tmp/alertmanager.yml --verify.receivers=incident-ingest,oncall-page alertname=ServiceUnavailable severity=SEV-1 service=payment-service
+    - amtool config routes test --config.file=/tmp/alertmanager.yml --verify.receivers=incident-ingest,oncall-notify alertname=PurchaseLatencyBudgetBurn severity=SEV-2 environment=staging
+
+error-budget-gate:
+  stage: verify
+  image: alpine:3.22
+  script:
+    - apk add --no-cache bash curl jq python3 >/dev/null
+    - bash tests/ci/error-budget-gate.sh
+
 publication-contract:
   stage: verify
   image: alpine:3.22

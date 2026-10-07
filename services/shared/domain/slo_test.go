@@ -34,3 +34,18 @@ func TestPurchaseSLOBudget(t *testing.T) {
 		t.Fatalf("business declines must not burn the budget: %+v", declines)
 	}
 }
+
+func TestPurchaseLatencySLOBudget(t *testing.T) {
+	now := time.Now()
+	if idle := NewPurchaseLatencySLO(now.Add(-30*24*time.Hour), now, 0, 0); idle.CurrentPercent != nil || idle.BudgetConsumedPercent != nil || idle.ThresholdMS != 2000 {
+		t.Fatalf("idle latency presented as healthy: %+v", idle)
+	}
+	healthy := NewPurchaseLatencySLO(now, now, 1000, 4)
+	if *healthy.CurrentPercent != 99.6 || healthy.AllowedSlow != 10 || healthy.BudgetRemaining != 6 || math.Abs(*healthy.BudgetConsumedPercent-40) > 1e-9 {
+		t.Fatalf("latency budget: %+v", healthy)
+	}
+	breached := NewPurchaseLatencySLO(now, now, 200, 5)
+	if breached.BudgetRemaining != 0 || math.Abs(*breached.BudgetConsumedPercent-250) > 1e-9 {
+		t.Fatalf("latency burn capped: %+v", breached)
+	}
+}

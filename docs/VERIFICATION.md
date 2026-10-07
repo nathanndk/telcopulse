@@ -1,5 +1,13 @@
 # Verification record
 
+## Latency and freshness SLOs, SLO-as-code and error budget gate · 2026-10-07
+
+- SLOs are generated from `infrastructure/slo/telcopulse.yml` by Sloth v0.16.0 (`scripts/generate-slo-rules.sh --check` passes). `promtool test rules` passes on Prometheus 3.13.3 with the burn alerts evaluated on the generated recordings, including fixtures that use Prometheus 3's normalized `le="2.0"` bucket label. A first live run found that `le="2"` matches nothing on Prometheus 3, which is why the selectors accept both forms.
+- Live Compose run of `tests/integration/slo_objectives.py` (6 min 23 s): eight 2.5 s database-latency purchases in staging fired `PurchaseLatencyBudgetBurn` and opened incident `INC-9931abb795710259a4827efa`. The durable staging latency SLO reported 34 slow of 39 purchases. `scripts/error-budget-gate.sh` against live Prometheus blocked STAGING and PRODUCTION_LIKE and passed DEV as advisory. A 4.5 s kafka-consumer-lag run delivered 4 of 10 development notifications later than 30 s, fired `NotificationFreshnessBudgetBurn` and opened `INC-e5b1a7a34ce56537392562f1`. Both simulations were stopped.
+- A NaN defect was found and fixed: Sloth's period budget was NaN whenever any 5-minute window had no traffic, so the gate's budget check could never trigger at synthetic traffic levels. The SLIs now drop idle windows. NaN samples recorded before the fix stay until they leave the two-day retention, so the live gate still printed "budget unknown" for those SLOs; the firing-alert check blocked correctly.
+- `bash tests/ci/error-budget-gate.sh`, the latency/freshness Go unit tests, `go test -race ./...`, frontend typecheck/lint and the three SLO browser cases pass. The purchase-SLO browser case was corrected for the business-decline cell added in the previous commit. With `TEST_DATABASE_URL`, `TestIncidentOverviewScopeAndLifecycle` and `TestIncidentOperationsWindowAndDenominators` fail identically on `main`; they predate this work and were not changed.
+- Not verified: a Jenkins run of the gate stages; 30-day retention for the period budget.
+
 ## Alertmanager routing, incident push and Telegram paging · 2026-10-07
 
 - Prometheus now delivers alerts to Alertmanager 0.34.1, which posts them to a dedicated incident-service listener (`ALERT_INGESTION=alertmanager`) and routes SEV-1/2/3 to Telegram page, alert and silent-ticket receivers. Go unit tests cover webhook authentication, envelope bounds, skipping of resolved and unknown alerts, idempotent repeats, 503 on storage failure and token separation. `promtool test rules` passes, including new Watchdog and Alertmanager meta-alert cases.

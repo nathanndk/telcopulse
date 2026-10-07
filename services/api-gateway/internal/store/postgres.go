@@ -123,12 +123,13 @@ func (s *Store) Overview(ctx context.Context, env string) (domain.Overview, erro
 		return out, err
 	}
 	var start, end time.Time
-	var success, technical, declined int64
-	err = s.Pool.QueryRow(ctx, `SELECT now()-interval '30 days',now(),count(*) FILTER(WHERE status='SUCCESS'),count(*) FILTER(WHERE status='FAILED' AND NOT COALESCE(result->>'error_code','')=ANY($2)),count(*) FILTER(WHERE status='FAILED' AND COALESCE(result->>'error_code','')=ANY($2)) FROM transactions WHERE environment=$1 AND created_at>=now()-interval '30 days' AND created_at<now()`, env, domain.BusinessDeclineCodes()).Scan(&start, &end, &success, &technical, &declined)
+	var success, technical, declined, timed, slow int64
+	err = s.Pool.QueryRow(ctx, `SELECT now()-interval '30 days',now(),count(*) FILTER(WHERE status='SUCCESS'),count(*) FILTER(WHERE status='FAILED' AND NOT COALESCE(result->>'error_code','')=ANY($2)),count(*) FILTER(WHERE status='FAILED' AND COALESCE(result->>'error_code','')=ANY($2)),count(*) FILTER(WHERE jsonb_typeof(result->'duration_ms')='number'),count(*) FILTER(WHERE jsonb_typeof(result->'duration_ms')='number' AND (result->>'duration_ms')::float>$3) FROM transactions WHERE environment=$1 AND created_at>=now()-interval '30 days' AND created_at<now()`, env, domain.BusinessDeclineCodes(), domain.PurchaseLatencyThresholdMS).Scan(&start, &end, &success, &technical, &declined, &timed, &slow)
 	if err != nil {
 		return out, err
 	}
 	out.PurchaseSLO = domain.NewPurchaseSLO(start, end, success, technical, declined)
+	out.PurchaseLatencySLO = domain.NewPurchaseLatencySLO(start, end, timed, slow)
 	return out, nil
 }
 

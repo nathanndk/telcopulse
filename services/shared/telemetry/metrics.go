@@ -22,6 +22,19 @@ type Metrics struct {
 	businessDuration *prometheus.HistogramVec
 }
 
+// notificationFreshness is process-global because Kafka delivery runs outside the
+// HTTP handler that owns *Metrics; New registers it for notification-service only.
+var notificationFreshness = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "notification_delivery_freshness_seconds", Help: "Time from the committed purchase outcome to its first durable notification receipt; excludes redelivery and operator reprocessing.", Buckets: []float64{.5, 1, 2, 5, 10, 30, 60, 300, 900}}, []string{"environment"})
+
+// NotificationDelivered records the first durable receipt for a purchase outcome.
+// Clock skew between producer and consumer can make small ages negative; they count as zero.
+func NotificationDelivered(environment string, seconds float64) {
+	if environment != "development" && environment != "staging" {
+		return
+	}
+	notificationFreshness.WithLabelValues(environment).Observe(max(seconds, 0))
+}
+
 // New registers bounded HTTP, business, process and pool metrics.
 func New(service string, pool *pgxpool.Pool) *Metrics {
 	registry := prometheus.NewRegistry()
@@ -39,6 +52,12 @@ func New(service string, pool *pgxpool.Pool) *Metrics {
 			m.business.WithLabelValues(env, "SUCCESS", "none").Add(0)
 			m.business.WithLabelValues(env, "FAILED", "technical").Add(0)
 			m.business.WithLabelValues(env, "FAILED", "business").Add(0)
+		}
+	}
+	if service == "notification-service" {
+		registerer.MustRegister(notificationFreshness)
+		for _, env := range []string{"development", "staging"} {
+			notificationFreshness.WithLabelValues(env)
 		}
 	}
 	if pool != nil {

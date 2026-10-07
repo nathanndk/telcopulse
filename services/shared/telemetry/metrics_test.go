@@ -41,3 +41,27 @@ func TestProbesExcluded(t *testing.T) {
 		}
 	}
 }
+
+func TestNotificationFreshnessScope(t *testing.T) {
+	if strings.Contains(scrape(New("api-gateway", nil)), "notification_delivery_freshness_seconds") {
+		t.Fatal("freshness exported outside notification-service")
+	}
+	m := New("notification-service", nil)
+	before := scrape(m)
+	if !strings.Contains(before, `notification_delivery_freshness_seconds_count{environment="staging",service="notification-service"} 0`) {
+		t.Fatalf("idle environment not initialized: %s", before)
+	}
+	NotificationDelivered("development", 3)
+	NotificationDelivered("development", -1)
+	NotificationDelivered("production", 3)
+	body := scrape(m)
+	if !strings.Contains(body, `notification_delivery_freshness_seconds_bucket{environment="development",service="notification-service",le="0.5"}`) || strings.Contains(body, `environment="production"`) {
+		t.Fatalf("unexpected freshness series: %s", body)
+	}
+}
+
+func scrape(m *Metrics) string {
+	w := httptest.NewRecorder()
+	m.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	return w.Body.String()
+}

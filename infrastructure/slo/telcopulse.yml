@@ -1,0 +1,43 @@
+# Source of truth for TelcoPulse SLOs. scripts/generate-slo-rules.sh renders this
+# spec with Sloth into infrastructure/prometheus/slo-rules.yml (recording rules
+# only). Burn-rate alerts live in rules.yml so that they can add traffic floors
+# and keep stable incident identities. See docs/slo.md. Bucket selectors accept
+# both le="2" and Prometheus 3's normalized le="2.0".
+version: prometheus/v1
+service: telcopulse
+labels:
+  owner: itoc
+slos:
+  - name: purchase-success
+    objective: 99.9
+    description: Completed synthetic purchases end without a technical failure. Business declines count as good.
+    sli:
+      raw:
+        # "> 0" drops idle windows instead of recording 0/0 = NaN, which would
+        # poison Sloth's 30d average (sum_over_time) and hide the period budget.
+        error_ratio_query: (sum by (environment) (rate(transaction_total{status="FAILED",failure_class="technical"}[{{.window}}]))) / (sum by (environment) (rate(transaction_total[{{.window}}])) > 0)
+    alerting:
+      page_alert: {disable: true}
+      ticket_alert: {disable: true}
+  - name: purchase-latency
+    objective: 99
+    description: Completed synthetic purchases, any outcome, finish within 2 seconds of creation, including recovery.
+    sli:
+      raw:
+        # "> 0" drops idle windows instead of recording 0/0 = NaN, which would
+        # poison Sloth's 30d average (sum_over_time) and hide the period budget.
+        error_ratio_query: (sum by (environment) (rate(transaction_duration_seconds_count[{{.window}}])) - sum by (environment) (rate(transaction_duration_seconds_bucket{le=~"2(\\.0)?"}[{{.window}}]))) / (sum by (environment) (rate(transaction_duration_seconds_count[{{.window}}])) > 0)
+    alerting:
+      page_alert: {disable: true}
+      ticket_alert: {disable: true}
+  - name: notification-freshness
+    objective: 99
+    description: Purchase notifications are delivered within 30 seconds of the committed purchase outcome.
+    sli:
+      raw:
+        # "> 0" drops idle windows instead of recording 0/0 = NaN, which would
+        # poison Sloth's 30d average (sum_over_time) and hide the period budget.
+        error_ratio_query: (sum by (environment) (rate(notification_delivery_freshness_seconds_count[{{.window}}])) - sum by (environment) (rate(notification_delivery_freshness_seconds_bucket{le=~"30(\\.0)?"}[{{.window}}]))) / (sum by (environment) (rate(notification_delivery_freshness_seconds_count[{{.window}}])) > 0)
+    alerting:
+      page_alert: {disable: true}
+      ticket_alert: {disable: true}
